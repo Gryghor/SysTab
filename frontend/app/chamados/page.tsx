@@ -1,0 +1,639 @@
+"use client"
+
+import { useEffect, useState, useRef } from "react"
+import { useRouter } from "next/navigation"
+import { useAuth } from "@/hooks/useAuth"
+import Image from "next/image"
+import Link from "next/link"
+import { Search, Plus, Eye, Filter, Clock, Calendar, Printer, FileText, FileOutput, Download } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Card } from "@/components/ui/card"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Navbar } from "../components/layout/navbar"
+import { Footer } from "../components/layout/footer"
+import { useToast } from "@/hooks/use-toast"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import api from "@/lib/api"
+
+export default function Chamados() {
+  const router = useRouter();
+  const { user, isLoading } = useAuth();
+  const { toast } = useToast();
+  // Debug: log user and loading state (must be after useAuth)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      // eslint-disable-next-line no-console
+      console.log("[Chamados] user:", user, "isLoading:", isLoading);
+    }
+  }, [user, isLoading]);
+  const [chamados, setChamados] = useState<any[]>([])
+  const [totalUsuariosCadastrados, setTotalUsuariosCadastrados] = useState(0)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [statusFilter, setStatusFilter] = useState("todos")
+  const [showFilters, setShowFilters] = useState(false)
+  const [unidadeFilter, setUnidadeFilter] = useState("")
+  const [regionalFilter, setRegionalFilter] = useState("")
+  const [usuarioFilter, setUsuarioFilter] = useState("")
+  const [dataInicialFilter, setDataInicialFilter] = useState("")
+  const [dataFinalFilter, setDataFinalFilter] = useState("")
+  const [printDialogOpen, setPrintDialogOpen] = useState(false)
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+  const [selectedChamadoId, setSelectedChamadoId] = useState<number | null>(null)
+  const [tabletFilter, setTabletFilter] = useState("")
+  const tableRef = useRef<HTMLDivElement>(null)
+
+  // Remove redirect for non-admins, only show access denied message (handled below)
+  // This effect is no longer needed, as we want to show a styled message, not redirect
+
+  useEffect(() => {
+    if (!isLoading && user && user.role === "admin") {
+      Promise.all([api.get("/chamados"), api.get("/usuarios")])
+        .then(([chamadosRes, usuariosRes]) => {
+          // Normalize chamados as in backup
+          const normalizados = chamadosRes.data.map((chamado: any) => ({
+            ...chamado,
+            id: chamado.idChamado,
+            usuario: chamado.nomeUser,
+            tabletId: chamado.idTab,
+            tombamento: chamado.idTomb,
+            unidade: chamado.nomeUnidade,
+            regional: chamado.nomeRegional || "Sem regional vinculada",
+          }))
+          setChamados(normalizados)
+          setTotalUsuariosCadastrados(Array.isArray(usuariosRes.data) ? usuariosRes.data.length : 0)
+        })
+        .catch((err) => {
+          toast({
+            title: "Erro ao carregar chamados",
+            description: err?.response?.data?.error || "Não foi possível obter os chamados do servidor.",
+            variant: "destructive",
+          })
+        })
+    }
+  }, [isLoading, user, toast])
+
+  // Show loading spinner while loading user
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <span className="text-lg text-gray-500">Carregando...</span>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <span className="text-lg text-red-500">Token inválido ou usuário não autenticado.<br/>Faça login novamente.</span>
+      </div>
+    );
+  }
+
+  // If not admin, show access denied message (but still render page shell)
+  if (user.role !== "admin") {
+    return (
+      <div className="min-h-screen flex flex-col bg-gray-500">
+        <Navbar currentPath="/chamados" />
+        <main className="flex-1 flex items-center justify-center">
+          <div className="bg-white/90 p-8 rounded-xl shadow-xl border border-gray-100 text-center">
+            <h2 className="text-2xl font-bold text-red-600 mb-2">Acesso restrito</h2>
+            <p className="text-gray-700 mb-4">Apenas administradores podem acessar a página de chamados.</p>
+            <Button className="bg-blue-500 hover:bg-blue-600" onClick={() => router.replace("/")}><p className="text-white">Voltar para o início</p></Button>
+          </div>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  // Use only defined unidades/usuarios/tablets (filter out empty/undefined, always use string for .trim())
+  const safeChamados = Array.isArray(chamados) ? chamados : [];
+  const unidades = [...new Set(safeChamados.map((c) => c.unidade).filter(u => u !== undefined && u !== null && String(u).trim() !== ""))]
+  const regionais = [...new Set(safeChamados.map((c) => c.regional).filter(r => r !== undefined && r !== null && String(r).trim() !== ""))]
+  const usuarios = [...new Set(safeChamados.map((c) => c.usuario).filter(u => u !== undefined && u !== null && String(u).trim() !== ""))]
+  const tombamentos = [...new Set(safeChamados.map((c) => c.tombamento).filter(t => t !== undefined && t !== null && String(t).trim() !== ""))]
+
+  const filteredChamados = safeChamados.filter((chamado) => {
+    if (statusFilter === "abertos" && chamado.status !== "Aberto") return false
+    if (statusFilter === "fechados" && chamado.status !== "Fechado") return false
+    if (statusFilter === "atrasados" && (chamado.status !== "Aberto" || (chamado.diasAberto ?? 0) < 7)) return false
+
+    const unidadeMatch = unidadeFilter === "" || chamado.unidade === unidadeFilter
+    const regionalMatch = regionalFilter === "" || chamado.regional === regionalFilter
+    const usuarioMatch = usuarioFilter === "" || chamado.usuario === usuarioFilter
+    const tabletMatch = tabletFilter === "" || chamado.tombamento === tabletFilter
+
+    // Date period filter
+    let dateMatch = true
+    if (dataInicialFilter) {
+      const dataEntrada = new Date(chamado.dataEntrada)
+      const dataInicial = new Date(dataInicialFilter)
+      if (dataEntrada < dataInicial) dateMatch = false
+    }
+    if (dataFinalFilter) {
+      const dataEntrada = new Date(chamado.dataEntrada)
+      const dataFinal = new Date(dataFinalFilter)
+      if (dataEntrada > dataFinal) dateMatch = false
+    }
+
+    const searchMatch =
+      searchTerm === "" ||
+      String(chamado.id).includes(searchTerm) ||
+      String(chamado.tabletId).includes(searchTerm) ||
+      String(chamado.tombamento).includes(searchTerm) ||
+      chamado.descricao?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      chamado.usuario?.toLowerCase().includes(searchTerm.toLowerCase())
+
+    return unidadeMatch && regionalMatch && usuarioMatch && tabletMatch && dateMatch && searchMatch
+  })
+
+  const clearFilters = () => {
+    setUnidadeFilter("")
+    setRegionalFilter("")
+    setUsuarioFilter("")
+    setDataInicialFilter("")
+    setDataFinalFilter("")
+    setTabletFilter("")
+    setShowFilters(false)
+
+    toast({
+      title: "Filtros limpos",
+      description: "Todos os filtros foram removidos",
+      variant: "info",
+    })
+  }
+
+  // Helper to format date as dd/mm/yyyy
+  function formatDate(dateValue: any) {
+    if (!dateValue) return "-"
+    const date = new Date(dateValue)
+    if (isNaN(date.getTime())) return "-"
+    const day = String(date.getDate()).padStart(2, '0')
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const year = date.getFullYear()
+    return `${day}/${month}/${year}`
+  }
+
+  const handlePrintClick = (id: number) => {
+    setSelectedChamadoId(id)
+    setPrintDialogOpen(true)
+  }
+
+  // Add this helper function to download the OS file for a chamado
+  function downloadOS(tipo: "entrega" | "devolucao") {
+    if (!selectedChamadoId) return;
+    // Use the api helper to get the correct backend URL
+    api.get(`/chamados/gerar-os/${selectedChamadoId}/${tipo}`, { responseType: 'blob' })
+      .then((res) => {
+        const blob = res.data instanceof Blob ? res.data : new Blob([res.data]);
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `OS_${tipo.toUpperCase()}_${selectedChamadoId}.docx`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      })
+      .catch(() => {
+        toast({
+          title: "Erro ao gerar O.S.",
+          description: "Não foi possível gerar a Ordem de Serviço.",
+          variant: "destructive",
+        });
+      });
+  }
+
+  async function exportarChamados(status: "todos" | "abertos" | "fechados") {
+    setIsExporting(true)
+    try {
+      const res = await api.get(`/chamados/exportar?status=${status}`, { responseType: "blob" })
+      const blob = res.data instanceof Blob ? res.data : new Blob([res.data], { type: "application/pdf" })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `relatorio-chamados-${status}.pdf`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(url)
+      setExportDialogOpen(false)
+      toast({ title: "Relatório exportado", description: "O PDF foi organizado por regional para facilitar a análise." })
+    } catch (err: any) {
+      toast({ title: "Erro ao exportar relatório", description: err?.response?.data?.error || "Não foi possível gerar o PDF de chamados.", variant: "destructive" })
+    } finally {
+      setIsExporting(false)
+    }
+  }
+  const handleNewTicket = () => {
+    toast({
+      title: "Novo chamado",
+      description: "Redirecionando para o formulário de abertura de chamado",
+      variant: "info",
+    })
+  }
+
+  const renderStatus = (chamado: any) => {
+    const dias = chamado.diasAberto
+    const atrasado = chamado.status === "Aberto" && dias && dias >= 7
+    const color = chamado.status === "Fechado" ? "bg-green-400" : atrasado ? "bg-amber-400" : "bg-sky-400"
+
+    return (
+      <div className="flex items-center">
+        <div className={`h-2.5 w-2.5 rounded-full ${color} mr-2`}></div>
+        <span>{chamado.status}</span>
+        {atrasado && <span className="text-xs text-red-500 ml-2">{dias} dias</span>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col bg-gray-50">
+      <Navbar currentPath="/chamados" />
+
+      {/* Main Content with Background Image */}
+      <main className="flex-1 relative">
+        {/* Background Image */}
+        <div className="absolute inset-0 z-0">
+          <Image src="/beach-background.jpg" alt="Fundo de praia" fill className="object-cover" priority />
+        </div>
+
+        {/* Content */}
+        <div className="relative z-10 container mx-auto py-6 px-4 max-w-6xl">
+          {/* Chamados Container */}
+          <div className="bg-white/90 backdrop-blur-sm rounded-xl w-full p-6 shadow-xl border border-gray-100">
+            <div className="flex flex-col space-y-4 mb-6">
+              <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
+                <h2 className="text-3xl font-light text-transparent bg-clip-text bg-gradient-to-r from-[#0948a7] to-[#298ed3] inline-block">
+                  <span className="font-bold">Chamados</span>{" "}
+                  <span className="text-gray-400 text-xl">| Gerenciamento</span>
+                </h2>
+
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      placeholder="Buscar chamado..."
+                      className="pl-10 pr-4 py-2 rounded-full w-full sm:w-64 border-gray-200 focus-visible:ring-2 focus-visible:ring-[#298ed3]"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                    <Search className="absolute left-3 top-2.5 h-5 w-5 text-gray-400" />
+                  </div>
+
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      className={`rounded-full border-gray-200 hover:bg-gray-100 ${showFilters ? "bg-blue-50 text-blue-600" : ""}`}
+                      onClick={() => setShowFilters(!showFilters)}
+                    >
+                      <Filter className="h-4 w-4 mr-2" />
+                      Filtros {showFilters && <span className="ml-1 text-xs">(Ativos)</span>}
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      className="rounded-full border-blue-200 text-[#0948a7] hover:bg-blue-50"
+                      onClick={() => setExportDialogOpen(true)}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Exportar PDF
+                    </Button>
+                    <Link href="/chamados/novo">
+                      <Button
+                        className="rounded-full bg-gradient-to-r from-[#0948a7] to-[#298ed3] hover:from-[#083b8a] hover:to-[#1c7ab8] text-white"
+                        onClick={handleNewTicket}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Novo Chamado
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              </div>
+
+              <Tabs defaultValue="todos" className="w-full" onValueChange={setStatusFilter}>
+                <TabsList className="bg-gray-100 p-1 rounded-full">
+                  <TabsTrigger
+                    value="todos"
+                    className="rounded-full data-[state=active]:bg-gradient-to-r from-[#0948a7] to-[#298ed3] data-[state=active]:text-white"
+                  >
+                    Todos
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="abertos"
+                    className="rounded-full data-[state=active]:bg-gradient-to-r from-[#0948a7] to-[#298ed3] data-[state=active]:text-white"
+                  >
+                    Abertos
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="fechados"
+                    className="rounded-full data-[state=active]:bg-gradient-to-r from-[#0948a7] to-[#298ed3] data-[state=active]:text-white"
+                  >
+                    Fechados
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="atrasados"
+                    className="rounded-full data-[state=active]:bg-gradient-to-r from-[#0948a7] to-[#298ed3] data-[state=active]:text-white"
+                  >
+                    <Clock className="h-4 w-4 mr-1" />
+                    Atrasados (+7 dias)
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+
+              {/* Filtros expandidos */}
+              {showFilters && (
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 animate-in fade-in duration-200">
+                  <div className="mb-4 flex flex-wrap gap-4 items-center">
+                    <span className="text-sm text-gray-700 font-medium">
+                      Total de chamados: <span className="font-bold">{chamados.length}</span>
+                    </span>
+                    <span className="text-sm text-gray-700 font-medium">
+                      Total de usuários: <span className="font-bold">{totalUsuariosCadastrados}</span>
+                    </span>
+                    {filteredChamados.length !== chamados.length && (
+                      <span className="text-sm text-blue-700 font-medium">
+                        Filtrados: <span className="font-bold">{filteredChamados.length}</span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                    <div>
+                      <Label htmlFor="regional-filter" className="text-sm text-gray-500 mb-1 block">
+                        Regional
+                      </Label>
+                      <Select value={regionalFilter} onValueChange={setRegionalFilter}>
+                        <SelectTrigger id="regional-filter" className="w-full">
+                          <SelectValue placeholder="Selecione a regional" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {regionais.map((regional) => (
+                            <SelectItem key={regional} value={regional}>{regional}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="usuario-filter" className="text-sm text-gray-500 mb-1 block">
+                        Usuário
+                      </Label>
+                      <Select value={usuarioFilter} onValueChange={setUsuarioFilter}>
+                        <SelectTrigger id="usuario-filter" className="w-full">
+                          <SelectValue placeholder="Selecione o usuário" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {usuarios.map((usuario) => (
+                            <SelectItem key={usuario} value={usuario}>{usuario}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="tablet-filter" className="text-sm text-gray-500 mb-1 block">
+                        Tablet (Tombamento)
+                      </Label>
+                      <Select value={tabletFilter} onValueChange={setTabletFilter}>
+                        <SelectTrigger id="tablet-filter" className="w-full">
+                          <SelectValue placeholder="Selecione o tablet" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {tombamentos.map((tomb) => (
+                            <SelectItem key={tomb} value={tomb}>{tomb}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label htmlFor="data-inicial" className="text-sm text-gray-500 mb-1 block">
+                        Data Inicial
+                      </Label>
+                      <Input
+                        id="data-inicial"
+                        type="date"
+                        className="border-gray-200"
+                        value={dataInicialFilter}
+                        onChange={(e) => setDataInicialFilter(e.target.value)}
+                      />
+                      <Label htmlFor="data-final" className="text-sm text-gray-500 mb-1 block mt-2">
+                        Data Final
+                      </Label>
+                      <Input
+                        id="data-final"
+                        type="date"
+                        className="border-gray-200"
+                        value={dataFinalFilter}
+                        onChange={(e) => setDataFinalFilter(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-6">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto rounded-full text-gray-500"
+                      onClick={clearFilters}
+                    >
+                      Limpar filtros
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modern Table */}
+            <Card className="bg-white rounded-xl overflow-hidden shadow-md border border-gray-100">
+              <div ref={tableRef} className="max-h-[calc(100vh-340px)] overflow-y-auto">
+                <table className="w-full">
+                  <thead className="bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white sticky top-0">
+                    <tr>
+                      <th className="py-2 px-3 text-left font-medium text-sm">ID</th>
+                      <th className="py-2 px-3 text-left font-medium text-sm">TABLET</th>
+                      <th className="py-2 px-3 text-left font-medium text-sm">USUÁRIO</th>
+                      <th className="py-2 px-3 text-left font-medium text-sm">DATA ENTRADA</th>
+                      <th className="py-2 px-3 text-left font-medium text-sm">DATA SAÍDA</th>
+                      <th className="py-2 px-3 text-left font-medium text-sm">DESCRIÇÃO</th>
+                      <th className="py-2 px-3 text-left font-medium text-sm">STATUS</th>
+                      <th className="py-2 px-3 text-center font-medium text-sm">AÇÕES</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredChamados.length > 0 ? (
+                      [...filteredChamados].sort((a, b) => {
+                        // Prefer sort by dataEntrada (date) if available, else by id
+                        if (a.dataEntrada && b.dataEntrada) {
+                          return new Date(b.dataEntrada).getTime() - new Date(a.dataEntrada).getTime();
+                        }
+                        return (b.id || 0) - (a.id || 0);
+                      }).map((chamado) => (
+                        <tr key={chamado.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                          <td className="py-2 px-3 text-blue-600 font-medium">
+                            <Link href={`/chamados/${chamado.id}`} className="hover:underline">
+                              {chamado.id}
+                            </Link>
+                          </td>
+                          <td className="py-2 px-3">
+                            <Link href={`/tablets/${chamado.tabletId}`} className="text-blue-600 hover:underline">
+                              {chamado.tombamento}
+                            </Link>
+                          </td>
+                          <td className="py-2 px-3 text-gray-800 text-sm">{chamado.usuario}</td>
+                          <td className="py-2 px-3 text-gray-800 text-sm">
+                            <div className="flex items-center">
+                              <Calendar className="h-4 w-4 mr-1 text-gray-400" />
+                              {formatDate(chamado.dataEntrada)}
+                            </div>
+                          </td>
+                          <td className="py-2 px-3 text-gray-800 text-sm">
+                            {chamado.dataSaida ? (
+                              <div className="flex items-center">
+                                <Calendar className="h-4 w-4 mr-1 text-gray-400" />
+                                {formatDate(chamado.dataSaida)}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 text-gray-800 text-sm max-w-[200px] truncate" title={chamado.descricao}>
+                            {chamado.descricao}
+                          </td>
+                          <td className="py-2 px-3 text-gray-800 text-sm">{renderStatus(chamado)}</td>
+                          <td className="py-2 px-3">
+                            <div className="flex justify-center space-x-2">
+                              <Link href={`/chamados/${chamado.id}`}>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-gray-600 hover:text-[#0948a7] hover:bg-blue-50"
+                                  title="Visualizar"
+                                  onClick={() =>
+                                    toast({
+                                      title: "Visualizando chamado",
+                                      description: `Detalhes do chamado #${chamado.id}`,
+                                      variant: "info",
+                                    })
+                                  }
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </Link>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 w-7 p-0 text-gray-600 hover:text-[#0948a7] hover:bg-blue-50"
+                                title="Imprimir O.S."
+                                onClick={() => handlePrintClick(chamado.id)}
+                              >
+                                <Printer className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={8} className="py-8 text-center text-gray-500">
+                          Nenhum chamado encontrado com os critérios de busca.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          </div>
+        </div>
+      </main>
+
+      <Footer />
+
+      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+        <DialogContent className="sm:max-w-lg p-0 overflow-hidden">
+          <DialogHeader className="bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white p-6">
+            <DialogTitle className="text-xl">Exportar chamados</DialogTitle>
+            <DialogDescription className="text-white/90 mt-1">Escolha o recorte do relatório. O PDF será separado por regional.</DialogDescription>
+          </DialogHeader>
+          <div className="p-6 space-y-3">
+            {[
+              { value: "todos", title: "Todos os chamados", description: "Visão completa, agrupada por regional." },
+              { value: "abertos", title: "Chamados abertos", description: "Pendências atuais organizadas por regional." },
+              { value: "fechados", title: "Chamados fechados", description: "Histórico de atendimentos concluídos por regional." },
+            ].map((opcao) => (
+              <Button key={opcao.value} type="button" variant="outline" disabled={isExporting}
+                onClick={() => exportarChamados(opcao.value as "todos" | "abertos" | "fechados")}
+                className="w-full h-auto min-h-16 justify-start rounded-xl border-gray-200 px-5 py-4 text-left hover:border-[#298ed3] hover:bg-blue-50">
+                <div className="rounded-lg bg-blue-100 p-2 mr-4 text-[#0948a7]"><FileText className="h-5 w-5" /></div>
+                <div><p className="font-semibold text-gray-800">{opcao.title}</p><p className="mt-0.5 text-xs font-normal text-gray-500">{opcao.description}</p></div>
+              </Button>
+            ))}
+            {isExporting && <p className="pt-1 text-center text-sm text-[#0948a7]">Gerando relatório...</p>}
+          </div>
+          <DialogFooter className="border-t border-gray-100 px-6 py-4">
+            <Button type="button" variant="outline" onClick={() => setExportDialogOpen(false)} disabled={isExporting} className="rounded-full">Cancelar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Dialog para impressão de O.S. */}
+      <Dialog open={printDialogOpen} onOpenChange={setPrintDialogOpen}>
+        <DialogContent className="sm:max-w-md p-0 overflow-hidden">
+          <DialogHeader className="bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white p-6 rounded-t-lg">
+            <DialogTitle className="text-xl">Gerar Ordem de Serviço</DialogTitle>
+            <DialogDescription className="text-white/90 mt-1">
+              Selecione o tipo de O.S. que deseja gerar para o chamado #{selectedChamadoId}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="p-6">
+            <div className="grid grid-cols-1 gap-4 py-4">
+              <Button
+                className="bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white h-16 rounded-xl flex items-center justify-start px-6 transition-all hover:scale-[1.02]"
+                onClick={() => downloadOS("entrega")}
+              >
+                <div className="bg-white/20 p-2 rounded-lg mr-4">
+                  <FileText className="h-6 w-6" />
+                </div>
+                <div className="text-left">
+                  <p className="font-medium">O.S. de Entrega</p>
+                  <p className="text-xs opacity-80">Gerar documento para entrega do equipamento</p>
+                </div>
+              </Button>
+
+              <Button
+                className="bg-gradient-to-r from-[#0948a7] to-[#298ed3] hover:from-[#083b8a] hover:to-[#1c7ab8] text-white h-16 rounded-xl flex items-center justify-start px-6 transition-all hover:scale-[1.02]"
+                onClick={() => downloadOS("devolucao")}
+              >
+                <div className="bg-white/20 p-2 rounded-lg mr-4">
+                  <FileOutput className="h-6 w-6" />
+                </div>
+                <div className="text-left">
+                  <p className="font-medium">O.S. de Devolução</p>
+                  <p className="text-xs opacity-80">Gerar documento para devolução do equipamento</p>
+                </div>
+              </Button>
+            </div>
+            <DialogFooter className="pt-4 border-t border-gray-100">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPrintDialogOpen(false)}
+                className="rounded-full border-gray-200"
+              >
+                Cancelar
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
