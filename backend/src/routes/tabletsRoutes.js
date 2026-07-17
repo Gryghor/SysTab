@@ -14,6 +14,9 @@ router.get("/:id/termo-responsabilidade", auth, tabletsController.gerarTermoResp
 // Edit tablet
 router.put("/:id", auth, tabletsController.editarTablet);
 
+// Remanejar tablet para outro usuário (ou desvincular, passando idUserDestino: null)
+router.post("/:id/remanejar", auth, tabletsController.remanejarTablet);
+
 // Unlink user from tablet
 
 // ✅ Aqui aplicamos o controle de nível de acesso:

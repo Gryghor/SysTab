@@ -1,0 +1,4 @@
+# Dumps de banco de dados na raiz do repo (contêm dados pessoais reais: CPF, nome, telefone).
+# Nunca commitar. Migrations versionadas ficam em backend/migrations/*.sql e não são afetadas
+# por esta regra, pois o "/" abaixo restringe o padrão apenas à raiz do projeto.
+/*.sql

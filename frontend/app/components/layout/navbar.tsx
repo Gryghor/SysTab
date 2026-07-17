@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Bell, Tablet, FileText, Building2, Users, ExternalLink } from "lucide-react"
+import { Bell, Tablet, FileText, Building2, Users, ExternalLink, ScrollText } from "lucide-react"
 import { useEffect, useState } from "react"
 
 interface NavbarProps {
@@ -25,6 +25,7 @@ export function Navbar({ currentPath }: NavbarProps) {
     { path: "/chamados", icon: FileText, label: "Chamados" },
     { path: "/unidades", icon: Building2, label: "Unidades" },
     { path: "/usuarios", icon: Users, label: "Usuários" },
+    ...(user?.nivel === "admin" ? [{ path: "/admin/logs", icon: ScrollText, label: "Logs" }] : []),
     { path: "/outros-sistemas", icon: ExternalLink, label: "Outros Sistemas" },
   ]
 

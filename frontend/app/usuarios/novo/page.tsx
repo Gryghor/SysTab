@@ -102,10 +102,14 @@ export default function NovoUsuario() {
       setCpf("")
       setTelefone("")
       setIdUnidade("")
-    } catch (err) {
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.error ||
+        err?.message ||
+        "Não foi possível cadastrar o usuário."
       toast({
         title: "Erro ao cadastrar usuário",
-        description: "Não foi possível cadastrar o usuário.",
+        description: errorMsg,
         variant: "destructive",
       })
     }

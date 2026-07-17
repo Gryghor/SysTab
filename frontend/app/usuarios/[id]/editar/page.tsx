@@ -125,10 +125,14 @@ export default function EditarUsuario({ params }: { params: { id: string } }) {
       })
 
       router.push("/usuarios")
-    } catch {
+    } catch (err: any) {
+      const errorMsg =
+        err?.response?.data?.error ||
+        err?.message ||
+        "Não foi possível atualizar os dados do usuário."
       toast({
         title: "Erro ao atualizar usuário",
-        description: "Não foi possível atualizar os dados do usuário.",
+        description: errorMsg,
         variant: "destructive",
       })
     }
