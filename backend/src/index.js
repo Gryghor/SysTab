@@ -12,6 +12,7 @@ const usersRoutes = require("./routes/usersRoutes");
 const unidadesRoutes = require("./routes/unidadesRoutes");
 const regRoutes = require("./routes/regRoutes");
 const authRoutes = require('./routes/authRoutes.js');
+const logsRoutes = require('./routes/logsRoutes.js');
 
 const app = express();
 
@@ -42,6 +43,7 @@ app.use('/empresas', empresasRoutes);
 app.use('/usuarios', usersRoutes);
 app.use('/unidades', unidadesRoutes);
 app.use('/regionais', regRoutes);
+app.use('/logs', logsRoutes);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {

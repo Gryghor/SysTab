@@ -44,6 +44,8 @@ exports.viewTermo = (req, res) => {
     fs.createReadStream(filePath).pipe(res);
 };
 const db = require("../config/db");
+const { registrarLog } = require("../utils/logger");
+const { mapDbError } = require("../utils/dbErrors");
 
 // Criar usuário
 exports.criarUsuario = async (req, res) => {
@@ -52,9 +54,19 @@ exports.criarUsuario = async (req, res) => {
     const sql = "INSERT INTO usuarios (nomeUser, cpf, telUser, idUnidade) VALUES (?, ?, ?, ?)";
     try {
         const [result] = await db.query(sql, [nomeUser, cpf, telUser, idUnidade]);
+
+        registrarLog({
+            acao: "CRIACAO",
+            entidade: "usuario",
+            entidadeId: result.insertId,
+            req,
+            detalhes: { nomeUser, cpf, telUser, idUnidade },
+        });
+
         res.status(201).json({ message: "Usuário criado com sucesso.", idUsuario: result.insertId });
     } catch (err) {
-        res.status(500).json({ error: "Erro ao criar usuário." });
+        const msg = mapDbError(err, { duplicateFields: { cpf: "Este CPF já está cadastrado para outro usuário." }, fallback: "Erro ao criar usuário." });
+        res.status(err?.code === "ER_DUP_ENTRY" ? 409 : 500).json({ error: msg });
     }
 };
 
@@ -106,12 +118,25 @@ exports.editarUsuario = async (req, res) => {
     if (!nomeUser || !cpf || !idUnidade) {
         return res.status(400).json({ error: "Nome, CPF e Unidade são obrigatórios." });
     }
-    const sql = "UPDATE usuarios SET nomeUser = ?, cpf = ?, telUser = ?, idUnidade = ? WHERE idUser = ?";
     try {
+        const [beforeRows] = await db.query("SELECT * FROM usuarios WHERE idUser = ?", [id]);
+        if (beforeRows.length === 0) return res.status(404).json({ error: "Usuário não encontrado." });
+
+        const sql = "UPDATE usuarios SET nomeUser = ?, cpf = ?, telUser = ?, idUnidade = ? WHERE idUser = ?";
         await db.query(sql, [nomeUser, cpf, telUser, idUnidade, id]);
+
+        registrarLog({
+            acao: "EDICAO",
+            entidade: "usuario",
+            entidadeId: Number(id),
+            req,
+            detalhes: { antes: beforeRows[0], depois: { nomeUser, cpf, telUser, idUnidade } },
+        });
+
         res.json({ message: "Usuário atualizado com sucesso." });
     } catch (err) {
-        res.status(500).json({ error: "Erro ao atualizar usuário." });
+        const msg = mapDbError(err, { duplicateFields: { cpf: "Este CPF já está cadastrado para outro usuário." }, fallback: "Erro ao atualizar usuário." });
+        res.status(err?.code === "ER_DUP_ENTRY" ? 409 : 500).json({ error: msg });
     }
 };
 
@@ -120,9 +145,28 @@ exports.editarUsuario = async (req, res) => {
 exports.deletarUsuario = async (req, res) => {
     const { id } = req.params;
     try {
+        const [userRows] = await db.query("SELECT * FROM usuarios WHERE idUser = ?", [id]);
+        if (userRows.length === 0) return res.status(404).json({ error: "Usuário não encontrado." });
+
+        // Tablets vinculados ficam com idUser = NULL (ON DELETE SET NULL). Registramos
+        // isso no log para não perder o rastro de por que um tablet ficou sem dono.
+        const [tabletRows] = await db.query("SELECT idTab, idTomb FROM tablets WHERE idUser = ?", [id]);
+
         await db.query("DELETE FROM usuarios WHERE idUser = ?", [id]);
+
+        registrarLog({
+            acao: "EXCLUSAO",
+            entidade: "usuario",
+            entidadeId: Number(id),
+            req,
+            detalhes: {
+                usuario: userRows[0],
+                tabletDesvinculado: tabletRows[0] || null,
+            },
+        });
+
         res.json({ message: "Usuário deletado com sucesso." });
     } catch (err) {
-        res.status(500).json({ error: "Erro ao deletar usuário." });
+        res.status(500).json({ error: mapDbError(err, { fallback: "Erro ao deletar usuário." }) });
     }
 };

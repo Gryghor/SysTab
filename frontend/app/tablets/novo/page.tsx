@@ -88,10 +88,14 @@ export default function NovoTablet() {
       setImei("")
       setIdEmpresa("")
       setIdUsuario("")
-    } catch (error) {
+    } catch (error: any) {
+      const errorMsg =
+        error?.response?.data?.error ||
+        error?.message ||
+        "Verifique os dados e tente novamente."
       toast({
         title: "Erro ao cadastrar tablet",
-        description: "Verifique os dados e tente novamente.",
+        description: errorMsg,
         variant: "destructive",
       })
     }
@@ -162,7 +166,12 @@ export default function NovoTablet() {
 
                     <div className="space-y-2">
                       <UsuariosSelect
-                        usuarios={usuarios.map((u: any) => ({ id: u.idUser, nome: u.nomeUser }))}
+                        usuarios={usuarios.map((u: any) => ({
+                          id: u.idUser,
+                          nome: u.nomeUser,
+                          tabletId: u.tablet?.idTab ?? null,
+                          tabletTombamento: u.tablet?.idTomb ?? null,
+                        }))}
                         value={idUser}
                         onValueChange={setIdUsuario}
                         label="Usuário"

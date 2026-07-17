@@ -5,6 +5,7 @@ const PizZip = require('pizzip');
 const Docxtemplater = require('docxtemplater');
 const { format } = require('date-fns');
 const { ptBR } = require('date-fns/locale');
+const { registrarLog } = require('../utils/logger');
 
 
 exports.criarChamado = async (req, res) => {
@@ -12,6 +13,15 @@ exports.criarChamado = async (req, res) => {
     const sql = 'INSERT INTO chamados (idTab, descricao, item, status, dataEntrada) VALUES (?, ?, ?, "Aberto", NOW())';
     try {
         const [result] = await db.query(sql, [idTab, descricao, item]);
+
+        registrarLog({
+            acao: "CRIACAO",
+            entidade: "chamado",
+            entidadeId: result.insertId,
+            req,
+            detalhes: { idTab, item, descricao },
+        });
+
         res.status(201).json({ message: "Chamado criado com sucesso.", idChamado: result.insertId });
     } catch (err) {
         console.error("Error creating chamado:", err);
@@ -95,12 +105,21 @@ exports.listarPorTablet = async (req, res) => {
 
 exports.deletarChamado = async (req, res) => {
     const { id } = req.params;
-    const sql = 'DELETE FROM chamados WHERE idChamado = ?';
     try {
-        const [result] = await db.query(sql, [id]);
-        if (result.affectedRows === 0) {
+        const [rows] = await db.query('SELECT * FROM chamados WHERE idChamado = ?', [id]);
+        if (rows.length === 0) {
             return res.status(404).json({ error: "Chamado não encontrado." });
         }
+        await db.query('DELETE FROM chamados WHERE idChamado = ?', [id]);
+
+        registrarLog({
+            acao: "EXCLUSAO",
+            entidade: "chamado",
+            entidadeId: Number(id),
+            req,
+            detalhes: rows[0],
+        });
+
         res.json({ message: "Chamado deletado com sucesso." });
     } catch (err) {
         console.error("Error deleting chamado:", err);
@@ -134,6 +153,15 @@ exports.atualizarChamado = async (req, res) => {
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: "Chamado não encontrado." });
         }
+
+        registrarLog({
+            acao: "EDICAO",
+            entidade: "chamado",
+            entidadeId: Number(id),
+            req,
+            detalhes: req.body,
+        });
+
         res.json({ message: "Chamado atualizado com sucesso." });
     } catch (err) {
         console.error("Erro ao atualizar chamado:", err);
@@ -151,6 +179,9 @@ exports.fecharChamado = async (req, res) => {
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: "Chamado não encontrado." });
         }
+
+        registrarLog({ acao: "FECHAMENTO", entidade: "chamado", entidadeId: Number(id), req });
+
         res.json({ message: "Chamado fechado com sucesso." });
     } catch (err) {
         console.error("Erro ao fechar chamado:", err);
@@ -168,6 +199,9 @@ exports.reabrirChamado = async (req, res) => {
         if (result.affectedRows === 0) {
             return res.status(404).json({ error: "Chamado não encontrado." });
         }
+
+        registrarLog({ acao: "REABERTURA", entidade: "chamado", entidadeId: Number(id), req });
+
         res.json({ message: "Chamado reaberto com sucesso." });
     } catch (err) {
         console.error("Erro ao reabrir chamado:", err);

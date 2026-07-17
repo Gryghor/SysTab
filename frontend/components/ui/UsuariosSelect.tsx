@@ -3,12 +3,17 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Search, X, ChevronDown, Check, UserX } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Usuario {
     id: string;
     nome: string;
+    // Tablet atualmente vinculado a este usuário (se houver), usado para sinalizar
+    // no dropdown que selecioná-lo aqui resultaria em erro no backend.
+    tabletId?: string | number | null;
+    tabletTombamento?: string | number | null;
 }
 type UsuariosSelectProps = {
     value: string | null;
@@ -21,9 +26,12 @@ type UsuariosSelectProps = {
     loading?: boolean;
     required?: boolean;
     className?: string;
+    // idTab do tablet sendo editado: o dono atual deste tablet não deve ser
+    // marcado como "já possui tablet" (não é um conflito consigo mesmo).
+    excludeTabletId?: string | number | null;
 };
 
-export default function UsuariosSelect({ value, onValueChange, usuarios = [], label, placeholder = "Selecione um usuário", error, disabled, loading, required, className }: UsuariosSelectProps) {
+export default function UsuariosSelect({ value, onValueChange, usuarios = [], label, placeholder = "Selecione um usuário", error, disabled, loading, required, className, excludeTabletId }: UsuariosSelectProps) {
     const NAO_CADASTRADO_VALUE = "NAO_CADASTRADO";
     const [isOpen, setIsOpen] = useState(false);
     const [search, setSearch] = useState("");
@@ -185,33 +193,52 @@ export default function UsuariosSelect({ value, onValueChange, usuarios = [], la
                                 </div>
                             ) : (
                                 <div className="py-1">
-                                    {filteredUsuarios.map((u) => (
-                                        <SelectItem
-                                            key={u.id}
-                                            value={String(u.id)}
-                                            className={cn(
-                                                "relative flex items-center justify-between",
-                                                "px-3 py-2.5 mx-1 rounded-lg",
-                                                "cursor-pointer transition-all duration-150",
-                                                "hover:bg-gray-50 dark:hover:bg-gray-800",
-                                                "focus:bg-emerald-50 dark:focus:bg-emerald-900/20",
-                                                "data-[state=checked]:bg-emerald-50 dark:data-[state=checked]:bg-emerald-900/20",
-                                                "data-[state=checked]:text-emerald-700 dark:data-[state=checked]:text-emerald-300"
-                                            )}
-                                        >
-                                            <span className="truncate pr-2 text-sm flex items-center gap-2">
-                                                {/* Show check icon before name if selected */}
-                                                {String(u.id) === (value === null ? NAO_CADASTRADO_VALUE : String(value)) && (
-                                                    <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                                    {filteredUsuarios.map((u) => {
+                                        const jaTemTablet =
+                                            u.id !== NAO_CADASTRADO_VALUE &&
+                                            u.tabletId != null &&
+                                            String(u.tabletId) !== String(excludeTabletId ?? "");
+
+                                        return (
+                                            <SelectItem
+                                                key={u.id}
+                                                value={String(u.id)}
+                                                disabled={jaTemTablet}
+                                                title={jaTemTablet ? `${u.nome} já possui o tablet #${u.tabletTombamento ?? u.tabletId}. Use "Remanejar" para transferir.` : undefined}
+                                                className={cn(
+                                                    "relative flex items-center justify-between",
+                                                    "px-3 py-2.5 mx-1 rounded-lg",
+                                                    "cursor-pointer transition-all duration-150",
+                                                    "hover:bg-gray-50 dark:hover:bg-gray-800",
+                                                    "focus:bg-emerald-50 dark:focus:bg-emerald-900/20",
+                                                    "data-[state=checked]:bg-emerald-50 dark:data-[state=checked]:bg-emerald-900/20",
+                                                    "data-[state=checked]:text-emerald-700 dark:data-[state=checked]:text-emerald-300"
                                                 )}
-                                                {/* Only show UserX for 'Usuário Não Cadastrado' and not selected */}
-                                                {u.id === NAO_CADASTRADO_VALUE && String(u.id) !== (value === null ? NAO_CADASTRADO_VALUE : String(value)) && (
-                                                    <UserX className="w-4 h-4 text-gray-400" />
-                                                )}
-                                                {u.nome}
-                                            </span>
-                                        </SelectItem>
-                                    ))}
+                                            >
+                                                <span className="truncate pr-2 text-sm flex items-center gap-2 w-full justify-between">
+                                                    <span className="flex items-center gap-2 truncate">
+                                                        {/* Show check icon before name if selected */}
+                                                        {String(u.id) === (value === null ? NAO_CADASTRADO_VALUE : String(value)) && (
+                                                            <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                                                        )}
+                                                        {/* Only show UserX for 'Usuário Não Cadastrado' and not selected */}
+                                                        {u.id === NAO_CADASTRADO_VALUE && String(u.id) !== (value === null ? NAO_CADASTRADO_VALUE : String(value)) && (
+                                                            <UserX className="w-4 h-4 text-gray-400" />
+                                                        )}
+                                                        <span className="truncate">{u.nome}</span>
+                                                    </span>
+                                                    {jaTemTablet && (
+                                                        <Badge
+                                                            variant="outline"
+                                                            className="ml-2 shrink-0 border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800 text-[10px] px-1.5 py-0 whitespace-nowrap"
+                                                        >
+                                                            Já possui tablet {u.tabletTombamento ? `#${u.tabletTombamento}` : ""}
+                                                        </Badge>
+                                                    )}
+                                                </span>
+                                            </SelectItem>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>

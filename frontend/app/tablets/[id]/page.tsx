@@ -5,10 +5,16 @@ import Image from "next/image"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import {
-  ArrowLeft, Edit, Phone, Calendar, Smartphone, Building, MapPin, Plus, Eye, Printer
+  ArrowLeft, Edit, Phone, Calendar, Smartphone, Building, MapPin, Plus, Eye, Printer, ArrowLeftRight
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import UsuariosSelect from "@/components/ui/UsuariosSelect"
 import { Navbar } from "../../components/layout/navbar"
 import { Footer } from "../../components/layout/footer"
 import { useToast } from "@/hooks/use-toast"
@@ -21,10 +27,14 @@ export default function TabletDetails() {
 
   const [tablet, setTablet] = useState<any>(null)
   const [chamados, setChamados] = useState<any[]>([])
+  const [usuarios, setUsuarios] = useState<any[]>([])
 
-  useEffect(() => {
-    if (!id) return
+  const [remanejarOpen, setRemanejarOpen] = useState(false)
+  const [destinoUser, setDestinoUser] = useState<string | null>(null)
+  const [motivoRemanejo, setMotivoRemanejo] = useState("")
+  const [remanejando, setRemanejando] = useState(false)
 
+  const carregarTablet = () => {
     api.get(`/tablets/${id}`)
       .then(res => setTablet(res.data))
       .catch(() => {
@@ -34,6 +44,12 @@ export default function TabletDetails() {
           variant: "destructive"
         })
       })
+  }
+
+  useEffect(() => {
+    if (!id) return
+
+    carregarTablet()
 
     api.get(`/chamados/tablet/${id}`)
       .then(res => setChamados(res.data))
@@ -44,7 +60,52 @@ export default function TabletDetails() {
           variant: "destructive"
         })
       })
+
+    api.get("/usuarios")
+      .then(res => setUsuarios(Array.isArray(res.data) ? res.data : []))
+      .catch(() => {
+        toast({
+          title: "Erro",
+          description: "Falha ao carregar lista de usuários.",
+          variant: "destructive"
+        })
+      })
   }, [id])
+
+  const abrirRemanejar = () => {
+    setDestinoUser(tablet?.idUser ? String(tablet.idUser) : null)
+    setMotivoRemanejo("")
+    setRemanejarOpen(true)
+  }
+
+  const confirmarRemanejar = async () => {
+    setRemanejando(true)
+    try {
+      const res = await api.post(`/tablets/${id}/remanejar`, {
+        idUserDestino: destinoUser,
+        motivo: motivoRemanejo || undefined,
+      })
+      toast({
+        title: "Sucesso",
+        description: res.data?.message || "Tablet remanejado com sucesso.",
+        variant: "success",
+      })
+      setRemanejarOpen(false)
+      carregarTablet()
+    } catch (error: any) {
+      const errorMsg =
+        error?.response?.data?.error ||
+        error?.message ||
+        "Não foi possível remanejar o tablet."
+      toast({
+        title: "Erro ao remanejar tablet",
+        description: errorMsg,
+        variant: "destructive",
+      })
+    } finally {
+      setRemanejando(false)
+    }
+  }
 
   const renderStatus = (chamado: any) => {
     let color = chamado.status === "Fechado"
@@ -87,12 +148,22 @@ export default function TabletDetails() {
                   <span className="font-bold">Tablet #{id}</span>
                 </h2>
               </div>
-              <Link href={`/tablets/${id}/editar`}>
-                <Button className="rounded-full bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white">
-                  <Edit className="h-4 w-4 mr-2" />
-                  Editar Tablet
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  className="rounded-full border-gray-200 hover:bg-gray-100"
+                  onClick={abrirRemanejar}
+                >
+                  <ArrowLeftRight className="h-4 w-4 mr-2" />
+                  Remanejar
                 </Button>
-              </Link>
+                <Link href={`/tablets/${id}/editar`}>
+                  <Button className="rounded-full bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white">
+                    <Edit className="h-4 w-4 mr-2" />
+                    Editar Tablet
+                  </Button>
+                </Link>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -237,6 +308,59 @@ export default function TabletDetails() {
         </div>
       </main>
       <Footer />
+
+      <Dialog open={remanejarOpen} onOpenChange={setRemanejarOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remanejar Tablet #{tablet.idTomb}</DialogTitle>
+            <DialogDescription>
+              Transfere o vínculo deste tablet para outro usuário (ou remove o vínculo atual) de forma
+              atômica e auditada. O dono anterior fica sem tablet; ele continua no sistema, mas não
+              fica mais associado a este aparelho.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <UsuariosSelect
+              usuarios={usuarios.map((u: any) => ({
+                id: u.idUser,
+                nome: u.nomeUser,
+                tabletId: u.tablet?.idTab ?? null,
+                tabletTombamento: u.tablet?.idTomb ?? null,
+              }))}
+              value={destinoUser}
+              onValueChange={setDestinoUser}
+              label="Novo usuário (destino)"
+              placeholder="Selecione o usuário de destino"
+              excludeTabletId={tablet.idTab}
+            />
+
+            <div className="space-y-2">
+              <Label htmlFor="motivo-remanejo">Motivo (opcional, mas recomendado)</Label>
+              <Textarea
+                id="motivo-remanejo"
+                placeholder="Ex: usuária se aposentou, tablet remanejado para o substituto."
+                value={motivoRemanejo}
+                onChange={(e) => setMotivoRemanejo(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemanejarOpen(false)} disabled={remanejando}>
+              Cancelar
+            </Button>
+            <Button
+              className="bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white"
+              onClick={confirmarRemanejar}
+              disabled={remanejando}
+            >
+              {remanejando ? "Remanejando..." : "Confirmar Remanejamento"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

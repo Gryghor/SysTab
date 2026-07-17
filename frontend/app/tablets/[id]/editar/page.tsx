@@ -89,8 +89,12 @@ export default function EditarTablet() {
 
       toast({ title: "Tablet atualizado", description: `O tablet #${tabletId} foi atualizado com sucesso`, variant: "success" })
       router.push(`/tablets/${tabletId}`)
-    } catch (error) {
-      toast({ title: "Erro ao atualizar tablet", description: "Verifique os dados e tente novamente.", variant: "destructive" })
+    } catch (error: any) {
+      const errorMsg =
+        error?.response?.data?.error ||
+        error?.message ||
+        "Verifique os dados e tente novamente."
+      toast({ title: "Erro ao atualizar tablet", description: errorMsg, variant: "destructive" })
     }
   }
 
@@ -161,11 +165,17 @@ export default function EditarTablet() {
                     {usuarios.length > 0 && (
                       <div className="space-y-2">
                           <UsuariosSelect
-                            usuarios={usuarios.map((u: any) => ({ id: u.idUser, nome: u.nomeUser }))}
+                            usuarios={usuarios.map((u: any) => ({
+                              id: u.idUser,
+                              nome: u.nomeUser,
+                              tabletId: u.tablet?.idTab ?? null,
+                              tabletTombamento: u.tablet?.idTomb ?? null,
+                            }))}
                             value={idUser}
                             onValueChange={setIdUser}
                             label="Usuário"
                             placeholder="Selecione o usuário"
+                            excludeTabletId={tabletId}
                           />
                       </div>
                     )}
