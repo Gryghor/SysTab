@@ -78,6 +78,28 @@ export default function TabletDetails() {
     setRemanejarOpen(true)
   }
 
+  const gerarTermoResponsabilidade = async () => {
+    try {
+      const resposta = await api.get(`/tablets/${id}/termo-responsabilidade`, {
+        responseType: "blob",
+      })
+      const arquivo = new Blob([resposta.data], {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      })
+      const url = URL.createObjectURL(arquivo)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `TERMO_RESPONSABILIDADE_${tablet?.idTomb || id}.docx`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+    } catch (error: any) {
+      const mensagem = error?.response?.data?.erro || "Não foi possível gerar o termo de responsabilidade."
+      toast({ title: "Erro ao gerar termo", description: mensagem, variant: "destructive" })
+    }
+  }
+
   const confirmarRemanejar = async () => {
     setRemanejando(true)
     try {
@@ -241,10 +263,7 @@ export default function TabletDetails() {
                 <Button
                   className="rounded-full bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white"
                   disabled={!tablet.nomeUser}
-                  onClick={() => {
-                    if (!tablet.nomeUser) return;
-                    window.open(`/api/tablets/${id}/termo-responsabilidade`, '_blank');
-                  }}
+                  onClick={gerarTermoResponsabilidade}
                   title={tablet.nomeUser ? "Gerar termo de responsabilidade" : "Vincule um usuário para gerar o termo"}
                 >
                   <Printer className="h-4 w-4 mr-2" />
