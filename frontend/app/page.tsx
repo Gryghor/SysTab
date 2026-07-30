@@ -23,6 +23,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import api from "@/lib/api"
+import { ReportDownloadButton } from "@/app/components/ReportDownloadButton"
+import { useAuth } from "@/hooks/useAuth"
 
 export default function SysTAB() {
   const [tablets, setTablets] = useState<any[]>([])
@@ -35,6 +37,8 @@ export default function SysTAB() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const tableRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
+  const { user } = useAuth()
+  const isAdmin = user?.role === "admin"
 
   useEffect(() => {
     api.get("/tablets")
@@ -140,7 +144,7 @@ export default function SysTAB() {
           <Image src="/beach-background.jpg" alt="Fundo de praia" fill className="object-cover" priority />
         </div>
 
-        <div className="relative z-10 container mx-auto py-6 px-4 max-w-6xl">
+        <div className="relative z-10 container mx-auto py-6 px-4 max-w-[1400px]">
           <div className="bg-white/90 backdrop-blur-sm rounded-xl w-full p-6 shadow-xl border border-gray-100">
             <div className="flex flex-col space-y-4 mb-6">
               <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
@@ -170,6 +174,8 @@ export default function SysTAB() {
                       <Filter className="h-4 w-4 mr-2" />
                       Filtros {showFilters && <span className="ml-1 text-xs">(Ativos)</span>}
                     </Button>
+
+                    <ReportDownloadButton type="tablets" />
 
                     <Link href="/tablets/novo">
                       <Button
@@ -251,7 +257,7 @@ export default function SysTAB() {
 
             {/* Counter now only appears inside the filter field */}
             <Card className="bg-white rounded-xl overflow-hidden shadow-md border border-gray-100">
-              <div ref={tableRef} className="max-h-[calc(100vh-350px)] overflow-y-auto">
+              <div ref={tableRef} className="systab-table-scroll max-h-[calc(100vh-350px)] overflow-y-auto">
                 <table className="w-full">
                   <thead className="bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white sticky top-0">
                     <tr>
@@ -298,9 +304,11 @@ export default function SysTAB() {
                                   <Edit className="h-4 w-4" />
                                 </Button>
                               </Link>
-                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-gray-600 hover:text-red-600 hover:bg-red-50" title="Excluir" onClick={() => handleDeleteTablet(tablet.idTab)}>
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              {isAdmin && (
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-gray-600 hover:text-red-600 hover:bg-red-50" title="Excluir" onClick={() => handleDeleteTablet(tablet.idTab)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -322,7 +330,7 @@ export default function SysTAB() {
 
       <Footer />
 
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+      <AlertDialog open={isAdmin && isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>

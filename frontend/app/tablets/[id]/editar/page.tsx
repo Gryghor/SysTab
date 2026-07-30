@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import UsuariosSelect from "@/components/ui/UsuariosSelect"
 import { Navbar } from "../../../components/layout/navbar"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Footer } from "../../../components/layout/footer"
@@ -24,9 +23,9 @@ export default function EditarTablet() {
 
   const [tombamento, setTombamento] = useState("")
   const [imei, setImei] = useState("")
-  const [idUser, setIdUser] = useState<string | null>(null)
   const [idEmp, setIdEmp] = useState("")
-  const [usuarios, setUsuarios] = useState<any[]>([])
+  const [usuarioAtual, setUsuarioAtual] = useState("")
+  const [rowVersion, setRowVersion] = useState<number | null>(null)
   const [empresas, setEmpresas] = useState<any[]>([])
 
   const [isLoading, setIsLoading] = useState(true)
@@ -34,20 +33,19 @@ export default function EditarTablet() {
   useEffect(() => {
     const carregarDados = async () => {
       try {
-        const [usuariosRes, empresasRes, tabletRes] = await Promise.all([
-          api.get("/usuarios"),
+        const [empresasRes, tabletRes] = await Promise.all([
           api.get("/empresas"),
           api.get(`/tablets/${tabletId}`),
         ])
 
-        setUsuarios(usuariosRes.data)
         setEmpresas(empresasRes.data)
 
         const tablet = tabletRes.data
         setTombamento(tablet.idTomb.toString().padStart(6, "0").replace(/^(d{3})(d{3})$/, "$1.$2"))
         setImei(tablet.imei)
-        setIdUser(String(tablet.idUser))
         setIdEmp(String(tablet.idEmp))
+        setUsuarioAtual(tablet.nomeUser || "Sem usuário vinculado")
+        setRowVersion(Number(tablet.rowVersion))
 
         setIsLoading(false)
       } catch (error) {
@@ -69,7 +67,7 @@ export default function EditarTablet() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!tombamento || !imei || !idEmp) {
+    if (!tombamento || !imei || !idEmp || rowVersion === null) {
       toast({ title: "Erro", description: "Preencha todos os campos obrigatórios", variant: "destructive" })
       return
     }
@@ -80,12 +78,13 @@ export default function EditarTablet() {
     }
 
     try {
-      await api.put(`/tablets/${tabletId}`, {
+      const resposta = await api.put(`/tablets/${tabletId}`, {
         idTomb: parseInt(tombamento.replace(/\D/g, "")),
         imei,
-        idUser: idUser === null ? null : parseInt(idUser),
         idEmp: parseInt(idEmp),
+        rowVersion,
       })
+      setRowVersion(resposta.data.rowVersion)
 
       toast({ title: "Tablet atualizado", description: `O tablet #${tabletId} foi atualizado com sucesso`, variant: "success" })
       router.push(`/tablets/${tabletId}`)
@@ -162,23 +161,13 @@ export default function EditarTablet() {
                       </div>
                     )}
 
-                    {usuarios.length > 0 && (
-                      <div className="space-y-2">
-                          <UsuariosSelect
-                            usuarios={usuarios.map((u: any) => ({
-                              id: u.idUser,
-                              nome: u.nomeUser,
-                              tabletId: u.tablet?.idTab ?? null,
-                              tabletTombamento: u.tablet?.idTomb ?? null,
-                            }))}
-                            value={idUser}
-                            onValueChange={setIdUser}
-                            label="Usuário"
-                            placeholder="Selecione o usuário"
-                            excludeTabletId={tabletId}
-                          />
-                      </div>
-                    )}
+                    <div className="space-y-2">
+                      <Label>Usuário vinculado</Label>
+                      <Input value={usuarioAtual} disabled />
+                      <p className="text-xs text-gray-500">
+                        Para alterar o responsável, use a operação Remanejar na tela do tablet.
+                      </p>
+                    </div>
 
                     {/* Unidade select removido: unidade é vinculada via usuário */}
                   </div>

@@ -2,23 +2,24 @@ const path = require("path");
 const fs = require("fs");
 
 // Delete Termo de Responsabilidade (PDF)
-exports.deleteTermo = (req, res) => {
+exports.deleteTermo = async (req, res) => {
     const { idUser } = req.params;
     const filePath = path.join(__dirname, "../../uploads/termos", `termo_${idUser}.pdf`);
     if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
+        await registrarLog({ acao: "EXCLUSAO_TERMO", entidade: "usuario", entidadeId: Number(idUser), req });
         return res.json({ message: "Termo deleted." });
     }
     res.status(404).json({ error: "File not found." });
 };
 
 // Upload Termo de Responsabilidade (PDF)
-exports.uploadTermo = (req, res) => {
+exports.uploadTermo = async (req, res) => {
     const { idUser } = req.params;
     if (!req.file) {
         return res.status(400).json({ error: "Nenhum arquivo enviado ou formato inválido." });
     }
-    // Arquivo já salvo pelo multer
+    await registrarLog({ acao: "UPLOAD_TERMO", entidade: "usuario", entidadeId: Number(idUser), req });
     res.status(201).json({ message: "Termo enviado com sucesso." });
 };
 
@@ -55,7 +56,7 @@ exports.criarUsuario = async (req, res) => {
     try {
         const [result] = await db.query(sql, [nomeUser, cpf, telUser, idUnidade]);
 
-        registrarLog({
+        await registrarLog({
             acao: "CRIACAO",
             entidade: "usuario",
             entidadeId: result.insertId,
@@ -125,7 +126,7 @@ exports.editarUsuario = async (req, res) => {
         const sql = "UPDATE usuarios SET nomeUser = ?, cpf = ?, telUser = ?, idUnidade = ? WHERE idUser = ?";
         await db.query(sql, [nomeUser, cpf, telUser, idUnidade, id]);
 
-        registrarLog({
+        await registrarLog({
             acao: "EDICAO",
             entidade: "usuario",
             entidadeId: Number(id),
@@ -148,20 +149,23 @@ exports.deletarUsuario = async (req, res) => {
         const [userRows] = await db.query("SELECT * FROM usuarios WHERE idUser = ?", [id]);
         if (userRows.length === 0) return res.status(404).json({ error: "Usuário não encontrado." });
 
-        // Tablets vinculados ficam com idUser = NULL (ON DELETE SET NULL). Registramos
-        // isso no log para não perder o rastro de por que um tablet ficou sem dono.
         const [tabletRows] = await db.query("SELECT idTab, idTomb FROM tablets WHERE idUser = ?", [id]);
+        if (tabletRows.length > 0) {
+            return res.status(409).json({
+                error: `Não é possível excluir: usuário vinculado ao tablet #${tabletRows[0].idTomb}. Remaneje ou desvincule o tablet primeiro.`,
+            });
+        }
 
         await db.query("DELETE FROM usuarios WHERE idUser = ?", [id]);
 
-        registrarLog({
+        await registrarLog({
             acao: "EXCLUSAO",
             entidade: "usuario",
             entidadeId: Number(id),
             req,
             detalhes: {
                 usuario: userRows[0],
-                tabletDesvinculado: tabletRows[0] || null,
+                tabletDesvinculado: null,
             },
         });
 

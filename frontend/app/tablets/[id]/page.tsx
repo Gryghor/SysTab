@@ -13,8 +13,10 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import UsuariosSelect from "@/components/ui/UsuariosSelect"
+import { UnidadeSelect } from "@/components/ui/UnidadeSelect"
 import { Navbar } from "../../components/layout/navbar"
 import { Footer } from "../../components/layout/footer"
 import { useToast } from "@/hooks/use-toast"
@@ -33,6 +35,13 @@ export default function TabletDetails() {
   const [destinoUser, setDestinoUser] = useState<string | null>(null)
   const [motivoRemanejo, setMotivoRemanejo] = useState("")
   const [remanejando, setRemanejando] = useState(false)
+  const [unidades, setUnidades] = useState<any[]>([])
+  const [completarCadastroOpen, setCompletarCadastroOpen] = useState(false)
+  const [usuarioParaCompletar, setUsuarioParaCompletar] = useState<any>(null)
+  const [cpfComplemento, setCpfComplemento] = useState("")
+  const [telefoneComplemento, setTelefoneComplemento] = useState("")
+  const [unidadeComplemento, setUnidadeComplemento] = useState("")
+  const [completandoCadastro, setCompletandoCadastro] = useState(false)
 
   const carregarTablet = () => {
     api.get(`/tablets/${id}`)
@@ -70,6 +79,15 @@ export default function TabletDetails() {
           variant: "destructive"
         })
       })
+    api.get("/unidades")
+      .then(res => setUnidades(Array.isArray(res.data) ? res.data : []))
+      .catch(() => {
+        toast({
+          title: "Erro",
+          description: "Falha ao carregar unidades e regionais.",
+          variant: "destructive",
+        })
+      })
   }, [id])
 
   const abrirRemanejar = () => {
@@ -100,12 +118,31 @@ export default function TabletDetails() {
     }
   }
 
-  const confirmarRemanejar = async () => {
+  const camposFaltantesDoUsuario = (usuario: any) => {
+    const faltantes: string[] = []
+    const unidade = unidades.find((item: any) => String(item.idUnidade) === String(usuario?.idUnidade || ""))
+    if (!String(usuario?.cpf || "").trim()) faltantes.push("CPF")
+    if (!String(usuario?.telUser || "").trim()) faltantes.push("telefone")
+    if (!usuario?.idUnidade) faltantes.push("unidade")
+    if (usuario?.idUnidade && (!unidade || unidade.regional == null)) faltantes.push("regional")
+    return faltantes
+  }
+
+  const abrirComplementoCadastro = (usuario: any) => {
+    setUsuarioParaCompletar(usuario)
+    setCpfComplemento(String(usuario?.cpf || ""))
+    setTelefoneComplemento(String(usuario?.telUser || ""))
+    setUnidadeComplemento(usuario?.idUnidade ? String(usuario.idUnidade) : "")
+    setCompletarCadastroOpen(true)
+  }
+
+  const efetivarRemanejamento = async () => {
     setRemanejando(true)
     try {
       const res = await api.post(`/tablets/${id}/remanejar`, {
         idUserDestino: destinoUser,
-        motivo: motivoRemanejo || undefined,
+        motivo: motivoRemanejo.trim(),
+        rowVersion: tablet.rowVersion,
       })
       toast({
         title: "Sucesso",
@@ -114,18 +151,90 @@ export default function TabletDetails() {
       })
       setRemanejarOpen(false)
       carregarTablet()
+      api.get("/usuarios").then(resposta => setUsuarios(Array.isArray(resposta.data) ? resposta.data : []))
     } catch (error: any) {
-      const errorMsg =
-        error?.response?.data?.error ||
-        error?.message ||
-        "Não foi possível remanejar o tablet."
+      if (error?.response?.data?.code === "DESTINATION_USER_INCOMPLETE") {
+        const usuarioAtual = usuarios.find((item: any) => String(item.idUser) === String(destinoUser))
+        abrirComplementoCadastro({ ...usuarioAtual, ...error.response.data.usuario })
+        return
+      }
+      const errorMsg = error?.response?.data?.error || error?.message || "Não foi possível remanejar o tablet."
+      toast({ title: "Erro ao remanejar tablet", description: errorMsg, variant: "destructive" })
+    } finally {
+      setRemanejando(false)
+    }
+  }
+
+  const confirmarRemanejar = async () => {
+    if (motivoRemanejo.trim().length < 5) {
       toast({
-        title: "Erro ao remanejar tablet",
-        description: errorMsg,
+        title: "Motivo obrigatório",
+        description: "Informe um motivo com pelo menos 5 caracteres.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (destinoUser !== null) {
+      const usuarioDestino = usuarios.find((item: any) => String(item.idUser) === String(destinoUser))
+      if (!usuarioDestino) {
+        toast({ title: "Usuário inválido", description: "Selecione novamente o usuário de destino.", variant: "destructive" })
+        return
+      }
+      if (camposFaltantesDoUsuario(usuarioDestino).length > 0) {
+        abrirComplementoCadastro(usuarioDestino)
+        return
+      }
+    }
+
+    await efetivarRemanejamento()
+  }
+
+  const salvarCadastroEContinuar = async () => {
+    if (!usuarioParaCompletar) return
+    const cpfNumeros = cpfComplemento.replace(/\D/g, "")
+    const telefoneNumeros = telefoneComplemento.replace(/\D/g, "")
+    const unidade = unidades.find((item: any) => String(item.idUnidade) === unidadeComplemento)
+    if (cpfNumeros.length !== 11) {
+      toast({ title: "CPF inválido", description: "Informe os 11 dígitos do CPF.", variant: "destructive" })
+      return
+    }
+    if (telefoneNumeros.length < 10 || telefoneNumeros.length > 11) {
+      toast({ title: "Telefone inválido", description: "Informe um telefone com DDD.", variant: "destructive" })
+      return
+    }
+    if (!unidade || unidade.regional == null) {
+      toast({ title: "Unidade obrigatória", description: "Selecione uma unidade vinculada a uma regional.", variant: "destructive" })
+      return
+    }
+
+    setCompletandoCadastro(true)
+    try {
+      await api.put(`/usuarios/${usuarioParaCompletar.idUser}`, {
+        nomeUser: usuarioParaCompletar.nomeUser,
+        cpf: cpfNumeros,
+        telUser: telefoneNumeros,
+        idUnidade: Number(unidadeComplemento),
+      })
+      const usuarioAtualizado = {
+        ...usuarioParaCompletar,
+        cpf: cpfNumeros,
+        telUser: telefoneNumeros,
+        idUnidade: Number(unidadeComplemento),
+        unidade: unidade.nomeUnidade,
+      }
+      setUsuarios((atuais) => atuais.map((item: any) => String(item.idUser) === String(usuarioAtualizado.idUser) ? usuarioAtualizado : item))
+      setCompletarCadastroOpen(false)
+      toast({ title: "Cadastro atualizado", description: "Os dados foram salvos. Efetivando o remanejamento...", variant: "success" })
+      await efetivarRemanejamento()
+    } catch (error: any) {
+      toast({
+        title: "Erro ao completar cadastro",
+        description: error?.response?.data?.error || "Não foi possível atualizar os dados do usuário.",
         variant: "destructive",
       })
     } finally {
-      setRemanejando(false)
+      setCompletandoCadastro(false)
     }
   }
 
@@ -272,7 +381,7 @@ export default function TabletDetails() {
               </div>
 
               <Card className="bg-white rounded-xl overflow-hidden shadow-md border border-gray-100">
-                <div className="max-h-[300px] overflow-y-auto">
+                <div className="systab-table-scroll max-h-[300px] overflow-y-auto">
                   <table className="w-full">
                     <thead className="bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white sticky top-0">
                       <tr>
@@ -355,7 +464,7 @@ export default function TabletDetails() {
             />
 
             <div className="space-y-2">
-              <Label htmlFor="motivo-remanejo">Motivo (opcional, mas recomendado)</Label>
+              <Label htmlFor="motivo-remanejo">Motivo obrigatório</Label>
               <Textarea
                 id="motivo-remanejo"
                 placeholder="Ex: usuária se aposentou, tablet remanejado para o substituto."
@@ -373,9 +482,55 @@ export default function TabletDetails() {
             <Button
               className="bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white"
               onClick={confirmarRemanejar}
-              disabled={remanejando}
+              disabled={remanejando || motivoRemanejo.trim().length < 5}
             >
               {remanejando ? "Remanejando..." : "Confirmar Remanejamento"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={completarCadastroOpen} onOpenChange={(open) => !completandoCadastro && setCompletarCadastroOpen(open)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Complete os dados do usuário</DialogTitle>
+            <DialogDescription>
+              {usuarioParaCompletar?.nomeUser} possui informações obrigatórias ausentes. Preencha-as antes de efetivar o remanejamento.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="cpf-complemento">CPF</Label>
+              <Input id="cpf-complemento" value={cpfComplemento} onChange={(event) => setCpfComplemento(event.target.value)} maxLength={14} placeholder="000.000.000-00" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="telefone-complemento">Telefone com DDD</Label>
+              <Input id="telefone-complemento" value={telefoneComplemento} onChange={(event) => setTelefoneComplemento(event.target.value)} maxLength={15} placeholder="(00) 00000-0000" />
+            </div>
+            <div className="space-y-2">
+              <UnidadeSelect
+                unidades={unidades.map((unidade: any) => ({
+                  id: unidade.idUnidade,
+                  nome: `${unidade.nomeUnidade} — Regional ${unidade.regional}`,
+                }))}
+                value={unidadeComplemento}
+                onValueChange={setUnidadeComplemento}
+                placeholder="Selecione ou busque a unidade"
+                label="Unidade"
+                selectId="unidade-complemento"
+                required
+              />
+            </div>
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+              <p className="text-xs text-gray-500">Regional vinculada</p>
+              <p className="font-medium text-[#0948a7]">
+                {unidades.find((unidade: any) => String(unidade.idUnidade) === unidadeComplemento)?.regional ?? "Selecione uma unidade"}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCompletarCadastroOpen(false)} disabled={completandoCadastro}>Cancelar</Button>
+            <Button className="bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white" onClick={salvarCadastroEContinuar} disabled={completandoCadastro}>
+              {completandoCadastro ? "Salvando..." : "Salvar e remanejar"}
             </Button>
           </DialogFooter>
         </DialogContent>

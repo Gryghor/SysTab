@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Navbar } from "../../components/layout/navbar"
 import { Footer } from "../../components/layout/footer"
 import { useToast } from "@/hooks/use-toast"
@@ -22,6 +22,8 @@ export default function NovoChamado() {
   const searchParams = useSearchParams()
   const tabletId = searchParams.get("tablet")
   const { toast } = useToast()
+  const router = useRouter()
+  const [salvando, setSalvando] = useState(false)
 
   // Vamos modificar a página de criação de novo chamado conforme solicitado
 
@@ -82,6 +84,7 @@ export default function NovoChamado() {
       })
       return
     }
+    setSalvando(true)
     try {
       await api.post("/chamados", {
         idTab: tabletSelecionado,
@@ -93,13 +96,15 @@ export default function NovoChamado() {
         description: `O chamado para o tablet ${tabletSelecionado} foi registrado`,
         variant: "success",
       })
-      // Optionally redirect to chamados list or details
+      router.replace("/chamados")
     } catch (err) {
       toast({
         title: "Erro ao salvar chamado",
         description: "Ocorreu um erro ao tentar abrir o chamado.",
         variant: "destructive",
       })
+    } finally {
+      setSalvando(false)
     }
   }
 
@@ -232,9 +237,9 @@ export default function NovoChamado() {
                 </Card>
 
                 <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4 pt-4">
-                  <Button type="submit" className="bg-green-600 hover:bg-green-700 text-white flex-1 rounded-full">
+                  <Button type="submit" disabled={salvando} className="bg-green-600 hover:bg-green-700 text-white flex-1 rounded-full">
                     <Save className="h-4 w-4 mr-2" />
-                    Salvar Chamado
+                    {salvando ? "Salvando..." : "Salvar Chamado"}
                   </Button>
                   <Button
                     type="button"

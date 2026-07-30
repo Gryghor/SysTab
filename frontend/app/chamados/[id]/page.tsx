@@ -1,8 +1,9 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { useParams } from "next/navigation"
 import {
   ArrowLeft,
   Edit,
@@ -31,18 +32,23 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import api from "@/lib/api"
+import { useAuth } from "@/hooks/useAuth"
 
-export default function ChamadoDetails({ params }: { params: { id: string } }) {
+export default function ChamadoDetails() {
+  const params = useParams<{ id: string }>()
+  const chamadoId = params.id
   const [isClosing, setIsClosing] = useState(false)
   const [printDialogOpen, setPrintDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [chamado, setChamado] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
+  const { user } = useAuth()
+  const isAdmin = user?.role === "admin"
 
   useEffect(() => {
     setLoading(true)
-    api.get(`/chamados/id/${params.id}`)
+    api.get(`/chamados/id/${chamadoId}`)
       .then(res => {
         // Normalize fields for frontend usage
         const c = res.data
@@ -52,6 +58,7 @@ export default function ChamadoDetails({ params }: { params: { id: string } }) {
           tabletId: c.idTab,
           tombamento: c.tombamento || c.idTomb || c.idtombamento || c.tomb || "",
           usuario: c.nomeUser || c.usuario,
+          abertoPor: c.nomeCriadorSnapshot || "Não informado",
           telefone: c.telUser || c.telefone,
           unidade: c.nomeUnidade || c.unidade,
           itensRecebidos: c.item || c.itensRecebidos,
@@ -67,7 +74,7 @@ export default function ChamadoDetails({ params }: { params: { id: string } }) {
         toast({ title: "Erro", description: "Não foi possível carregar o chamado.", variant: "destructive" })
         setLoading(false)
       })
-  }, [params.id])
+  }, [chamadoId])
 
   // Helper to format date as dd/mm/yyyy
   function formatDate(dateValue: any) {
@@ -103,17 +110,17 @@ export default function ChamadoDetails({ params }: { params: { id: string } }) {
   }
 
   const handleCloseChamado = () => {
-    api.patch(`/chamados/${params.id}/fechar`)
+    api.patch(`/chamados/${chamadoId}/fechar`)
       .then(() => {
         toast({
           title: "Chamado fechado com sucesso",
-          description: `O chamado #${params.id} foi fechado`,
+          description: `O chamado #${chamadoId} foi fechado`,
           variant: "success",
         })
         setIsClosing(false)
         // Optionally, reload chamado data
         setLoading(true)
-        api.get(`/chamados/id/${params.id}`).then(res => {
+        api.get(`/chamados/id/${chamadoId}`).then(res => {
           const c = res.data
           setChamado({
             ...c,
@@ -121,6 +128,7 @@ export default function ChamadoDetails({ params }: { params: { id: string } }) {
             tabletId: c.idTab,
             tombamento: c.tombamento || c.idTomb || c.idtombamento || c.tomb || "",
             usuario: c.nomeUser || c.usuario,
+          abertoPor: c.nomeCriadorSnapshot || "Não informado",
             telefone: c.telUser || c.telefone,
             unidade: c.nomeUnidade || c.unidade,
             itensRecebidos: c.item || c.itensRecebidos,
@@ -169,22 +177,22 @@ export default function ChamadoDetails({ params }: { params: { id: string } }) {
   const handlePrintOS = (tipo: "entrega" | "devolucao") => {
     toast({
       title: `O.S. de ${tipo === "entrega" ? "Entrega" : "Devolução"} gerada`,
-      description: `Documento para o chamado #${params.id} gerado com sucesso`,
+      description: `Documento para o chamado #${chamadoId} gerado com sucesso`,
       variant: "success",
     })
     setPrintDialogOpen(false)
   }
 
   const handleReabrirChamado = () => {
-    api.patch(`/chamados/${params.id}/reabrir`)
+    api.patch(`/chamados/${chamadoId}/reabrir`)
       .then(() => {
         toast({
           title: "Chamado reaberto com sucesso",
-          description: `O chamado #${params.id} foi reaberto`,
+          description: `O chamado #${chamadoId} foi reaberto`,
           variant: "success",
         })
         setLoading(true)
-        api.get(`/chamados/id/${params.id}`).then(res => {
+        api.get(`/chamados/id/${chamadoId}`).then(res => {
           const c = res.data
           setChamado({
             ...c,
@@ -192,6 +200,7 @@ export default function ChamadoDetails({ params }: { params: { id: string } }) {
             tabletId: c.idTab,
             tombamento: c.tombamento || c.idTomb || c.idtombamento || c.tomb || "",
             usuario: c.nomeUser || c.usuario,
+          abertoPor: c.nomeCriadorSnapshot || "Não informado",
             telefone: c.telUser || c.telefone,
             unidade: c.nomeUnidade || c.unidade,
             itensRecebidos: c.item || c.itensRecebidos,
@@ -260,7 +269,7 @@ export default function ChamadoDetails({ params }: { params: { id: string } }) {
                   </Button>
                 </Link>
                 <h2 className="text-3xl font-light text-transparent bg-clip-text bg-gradient-to-r from-[#0948a7] to-[#298ed3] inline-block">
-                  <span className="font-bold">Chamado #{params.id}</span>
+                  <span className="font-bold">Chamado #{chamadoId}</span>
                 </h2>
                 <div className="text-sm font-medium">{renderStatus()}</div>
               </div>
@@ -275,7 +284,7 @@ export default function ChamadoDetails({ params }: { params: { id: string } }) {
                   <Printer className="h-4 w-4 mr-2" />
                   Imprimir O.S.
                 </Button>
-                <Link href={`/chamados/${params.id}/editar`}>
+                <Link href={`/chamados/${chamadoId}/editar`}>
                   <Button variant="outline" size="sm" className="rounded-full border-gray-200 hover:bg-gray-100">
                     <Edit className="h-4 w-4 mr-2" />
                     Editar
@@ -302,17 +311,19 @@ export default function ChamadoDetails({ params }: { params: { id: string } }) {
                     Reabrir Chamado
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full border-gray-200 hover:bg-red-100 hover:text-red-700 flex items-center justify-center p-2"
-                  title="Excluir Chamado"
-                  onClick={() => setDeleteDialogOpen(true)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                {isAdmin && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full border-gray-200 hover:bg-red-100 hover:text-red-700 flex items-center justify-center p-2"
+                    title="Excluir Chamado"
+                    onClick={() => setDeleteDialogOpen(true)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
       {/* Dialog para confirmação de exclusão */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <Dialog open={isAdmin && deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Excluir Chamado</DialogTitle>
@@ -325,7 +336,7 @@ export default function ChamadoDetails({ params }: { params: { id: string } }) {
             <Button
               onClick={async () => {
                 try {
-                  await api.delete(`/chamados/${params.id}`);
+                  await api.delete(`/chamados/${chamadoId}`);
                   toast({
                     title: "Chamado excluído com sucesso!",
                     variant: "success",
@@ -371,6 +382,10 @@ export default function ChamadoDetails({ params }: { params: { id: string } }) {
                           <Calendar className="h-4 w-4 mr-1 text-gray-400" />
                           {chamado.dataSaida ? formatDate(chamado.dataSaida) : "Não finalizado"}
                         </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-500">Aberto por</p>
+                        <p className="font-medium">{chamado.abertoPor}</p>
                       </div>
                       <div>
                         <p className="text-sm text-gray-500">Itens Recebidos</p>

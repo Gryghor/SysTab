@@ -1,13 +1,13 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import { useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/useAuth"
 import Image from "next/image"
 import Link from "next/link"
-import { Search, Plus, Eye, Filter, Clock, Calendar, Printer, FileText, FileOutput } from "lucide-react"
+import { Search, Plus, Eye, Filter, Clock, Calendar, Printer, FileText, FileOutput, Check, ChevronsUpDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Card } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
@@ -24,9 +24,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import api from "@/lib/api"
+import { ReportDownloadButton } from "@/app/components/ReportDownloadButton"
 
 export default function Chamados() {
-  const router = useRouter();
   const { user, isLoading } = useAuth();
   const { toast } = useToast();
   // Debug: log user and loading state (must be after useAuth)
@@ -47,13 +47,15 @@ export default function Chamados() {
   const [printDialogOpen, setPrintDialogOpen] = useState(false)
   const [selectedChamadoId, setSelectedChamadoId] = useState<number | null>(null)
   const [tabletFilter, setTabletFilter] = useState("")
+  const [tabletFilterOpen, setTabletFilterOpen] = useState(false)
+  const [tabletSearch, setTabletSearch] = useState("")
   const tableRef = useRef<HTMLDivElement>(null)
 
   // Remove redirect for non-admins, only show access denied message (handled below)
   // This effect is no longer needed, as we want to show a styled message, not redirect
 
   useEffect(() => {
-    if (!isLoading && user && user.role === "admin") {
+    if (!isLoading && user) {
       api.get("/chamados")
         .then(res => {
           // Normalize chamados as in backup
@@ -61,6 +63,7 @@ export default function Chamados() {
             ...chamado,
             id: chamado.idChamado,
             usuario: chamado.nomeUser,
+            abertoPor: chamado.nomeCriadorSnapshot || "Não informado",
             tabletId: chamado.idTab,
             tombamento: chamado.idTomb,
             unidade: chamado.nomeUnidade,
@@ -90,23 +93,6 @@ export default function Chamados() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <span className="text-lg text-red-500">Token inválido ou usuário não autenticado.<br/>Faça login novamente.</span>
-      </div>
-    );
-  }
-
-  // If not admin, show access denied message (but still render page shell)
-  if (user.role !== "admin") {
-    return (
-      <div className="min-h-screen flex flex-col bg-gray-500">
-        <Navbar currentPath="/chamados" />
-        <main className="flex-1 flex items-center justify-center">
-          <div className="bg-white/90 p-8 rounded-xl shadow-xl border border-gray-100 text-center">
-            <h2 className="text-2xl font-bold text-red-600 mb-2">Acesso restrito</h2>
-            <p className="text-gray-700 mb-4">Apenas administradores podem acessar a página de chamados.</p>
-            <Button className="bg-blue-500 hover:bg-blue-600" onClick={() => router.replace("/")}><p className="text-white">Voltar para o início</p></Button>
-          </div>
-        </main>
-        <Footer />
       </div>
     );
   }
@@ -240,7 +226,7 @@ export default function Chamados() {
         </div>
 
         {/* Content */}
-        <div className="relative z-10 container mx-auto py-6 px-4 max-w-6xl">
+        <div className="relative z-10 container mx-auto py-6 px-4 max-w-[1400px]">
           {/* Chamados Container */}
           <div className="bg-white/90 backdrop-blur-sm rounded-xl w-full p-6 shadow-xl border border-gray-100">
             <div className="flex flex-col space-y-4 mb-6">
@@ -271,6 +257,8 @@ export default function Chamados() {
                       <Filter className="h-4 w-4 mr-2" />
                       Filtros {showFilters && <span className="ml-1 text-xs">(Ativos)</span>}
                     </Button>
+
+                    <ReportDownloadButton type="chamados" />
 
                     <Link href="/chamados/novo">
                       <Button
@@ -348,16 +336,60 @@ export default function Chamados() {
                       <Label htmlFor="tablet-filter" className="text-sm text-gray-500 mb-1 block">
                         Tablet (Tombamento)
                       </Label>
-                      <Select value={tabletFilter} onValueChange={setTabletFilter}>
-                        <SelectTrigger id="tablet-filter" className="w-full">
-                          <SelectValue placeholder="Selecione o tablet" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {tombamentos.map((tomb) => (
-                            <SelectItem key={tomb} value={tomb}>{tomb}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Popover open={tabletFilterOpen} onOpenChange={(open) => { setTabletFilterOpen(open); if (!open) setTabletSearch("") }}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            id="tablet-filter"
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={tabletFilterOpen}
+                            className="w-full justify-between border-gray-200 font-normal"
+                          >
+                            {tabletFilter || "Selecione ou busque o tablet"}
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 text-gray-400" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                          <div className="p-2">
+                            <div className="relative mb-2">
+                              <Search className="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                              <Input
+                                autoFocus
+                                value={tabletSearch}
+                                onChange={(event) => setTabletSearch(event.target.value)}
+                                placeholder="Buscar tombamento..."
+                                className="pl-9"
+                              />
+                            </div>
+                            <div className="max-h-[260px] overflow-y-auto">
+                              <button
+                                type="button"
+                                className="flex w-full items-center rounded-sm px-2 py-2 text-left text-sm hover:bg-gray-100"
+                                onClick={() => { setTabletFilter(""); setTabletFilterOpen(false); setTabletSearch("") }}
+                              >
+                                <Check className={`mr-2 h-4 w-4 ${tabletFilter === "" ? "opacity-100" : "opacity-0"}`} />
+                                Todos os tablets
+                              </button>
+                              {tombamentos
+                                .filter((tomb) => String(tomb).toLowerCase().includes(tabletSearch.trim().toLowerCase()))
+                                .map((tomb) => (
+                                  <button
+                                    type="button"
+                                    key={tomb}
+                                    className="flex w-full items-center rounded-sm px-2 py-2 text-left text-sm hover:bg-gray-100"
+                                    onClick={() => { setTabletFilter(tomb); setTabletFilterOpen(false); setTabletSearch("") }}
+                                  >
+                                    <Check className={`mr-2 h-4 w-4 ${tabletFilter === tomb ? "opacity-100" : "opacity-0"}`} />
+                                    {tomb}
+                                  </button>
+                                ))}
+                              {tombamentos.filter((tomb) => String(tomb).toLowerCase().includes(tabletSearch.trim().toLowerCase())).length === 0 && (
+                                <p className="py-6 text-center text-sm text-gray-500">Nenhum tombamento encontrado.</p>
+                              )}
+                            </div>
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </div>
                     <div>
                       <Label htmlFor="data-inicial" className="text-sm text-gray-500 mb-1 block">
@@ -398,13 +430,14 @@ export default function Chamados() {
 
             {/* Modern Table */}
             <Card className="bg-white rounded-xl overflow-hidden shadow-md border border-gray-100">
-              <div ref={tableRef} className="max-h-[calc(100vh-340px)] overflow-y-auto">
+              <div ref={tableRef} className="systab-table-scroll systab-table-wide max-h-[calc(100vh-340px)] overflow-y-auto">
                 <table className="w-full">
                   <thead className="bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white sticky top-0">
                     <tr>
                       <th className="py-2 px-3 text-left font-medium text-sm">ID</th>
                       <th className="py-2 px-3 text-left font-medium text-sm">TABLET</th>
                       <th className="py-2 px-3 text-left font-medium text-sm">USUÁRIO</th>
+                      <th className="py-2 px-3 text-left font-medium text-sm">ABERTO POR</th>
                       <th className="py-2 px-3 text-left font-medium text-sm">DATA ENTRADA</th>
                       <th className="py-2 px-3 text-left font-medium text-sm">DATA SAÍDA</th>
                       <th className="py-2 px-3 text-left font-medium text-sm">DESCRIÇÃO</th>
@@ -433,6 +466,7 @@ export default function Chamados() {
                             </Link>
                           </td>
                           <td className="py-2 px-3 text-gray-800 text-sm">{chamado.usuario}</td>
+                          <td className="py-2 px-3 text-gray-800 text-sm">{chamado.abertoPor}</td>
                           <td className="py-2 px-3 text-gray-800 text-sm">
                             <div className="flex items-center">
                               <Calendar className="h-4 w-4 mr-1 text-gray-400" />
@@ -487,7 +521,7 @@ export default function Chamados() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={8} className="py-8 text-center text-gray-500">
+                        <td colSpan={9} className="py-8 text-center text-gray-500">
                           Nenhum chamado encontrado com os critérios de busca.
                         </td>
                       </tr>

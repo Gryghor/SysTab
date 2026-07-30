@@ -33,7 +33,7 @@ exports.listarEmpresas = async (req, res) => {
 exports.deletarEmpresa = async (req, res) => {
     const { id } = req.params;
     try {
-        await db.query("DELETE FROM empresas WHERE idEmpresa = ?", [id]);
+        await db.query("DELETE FROM empresas WHERE idEmp = ?", [id]);
         res.json({ message: "Empresa deletada com sucesso." });
     } catch (err) {
         res.status(500).json({ error: "Erro ao deletar empresa." });

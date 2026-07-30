@@ -5,6 +5,7 @@ import type React from "react"
 import { useEffect, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
+import { useParams, useRouter } from "next/navigation"
 import { ArrowLeft, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,17 +18,21 @@ import { Footer } from "../../../components/layout/footer"
 import { useToast } from "@/hooks/use-toast"
 import api from "@/lib/api"
 
-export default function EditarChamado({ params }: { params: { id: string } }) {
+export default function EditarChamado() {
+  const params = useParams<{ id: string }>()
+  const chamadoId = params.id
+  const router = useRouter()
   const { toast } = useToast()
 
   const [loading, setLoading] = useState(true)
   const [descricao, setDescricao] = useState("")
   const [itensRecebidos, setItensRecebidos] = useState("")
   const [chamado, setChamado] = useState<any>(null)
+  const [salvando, setSalvando] = useState(false)
 
   useEffect(() => {
     setLoading(true)
-    api.get(`/chamados/id/${params.id}`)
+    api.get(`/chamados/id/${chamadoId}`)
       .then(res => {
         const c = res.data
         setChamado({
@@ -52,7 +57,7 @@ export default function EditarChamado({ params }: { params: { id: string } }) {
         toast({ title: "Erro", description: "Não foi possível carregar o chamado.", variant: "destructive" })
         setLoading(false)
       })
-  }, [params.id])
+  }, [chamadoId])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -64,25 +69,29 @@ export default function EditarChamado({ params }: { params: { id: string } }) {
       })
       return
     }
+
+    setSalvando(true)
     try {
-      await api.put(`/chamados/${params.id}`, {
+      await api.put(`/chamados/${chamadoId}`, {
         descricao,
         itensRecebidos,
       })
       toast({
         title: "Chamado atualizado com sucesso",
-        description: `O chamado #${params.id} foi atualizado`,
+        description: `O chamado #${chamadoId} foi atualizado`,
         variant: "success",
       })
+      router.replace(`/chamados/${chamadoId}`)
     } catch {
       toast({
         title: "Erro ao atualizar chamado",
         description: "Não foi possível atualizar o chamado.",
         variant: "destructive",
       })
+    } finally {
+      setSalvando(false)
     }
   }
-
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col bg-gray-50">
@@ -117,14 +126,14 @@ export default function EditarChamado({ params }: { params: { id: string } }) {
         <div className="relative z-10 container mx-auto py-6 px-4 max-w-4xl">
           <div className="bg-white/90 backdrop-blur-sm rounded-xl w-full p-6 shadow-xl border border-gray-100">
             <div className="flex items-center mb-6">
-              <Link href={`/chamados/${params.id}`}>
+              <Link href={`/chamados/${chamadoId}`}>
                 <Button variant="outline" size="sm" className="rounded-full border-gray-200 hover:bg-gray-100 mr-4">
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   Voltar
                 </Button>
               </Link>
               <h2 className="text-3xl font-light text-transparent bg-clip-text bg-gradient-to-r from-[#0948a7] to-[#298ed3] inline-block">
-                <span className="font-bold">Editar Chamado #{params.id}</span>
+                <span className="font-bold">Editar Chamado #{chamadoId}</span>
               </h2>
             </div>
 
@@ -204,10 +213,11 @@ export default function EditarChamado({ params }: { params: { id: string } }) {
                 <div className="pt-4">
                   <Button
                     type="submit"
+                    disabled={salvando}
                     className="w-full rounded-full bg-gradient-to-r from-[#0948a7] to-[#298ed3] hover:from-[#083b8a] hover:to-[#1c7ab8] text-white"
                   >
                     <Save className="h-4 w-4 mr-2" />
-                    Salvar Alterações
+                    {salvando ? "Salvando..." : "Salvar Alterações"}
                   </Button>
                 </div>
               </div>

@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const logsController = require("../controllers/logsController");
+const auth = require("../middlewares/authMiddleware");
 const adminMiddleware = require("../middlewares/adminMiddleware");
 
-// Autenticação já é aplicada globalmente em index.js antes deste router.
-router.get("/", adminMiddleware, logsController.listarLogs);
+router.get("/", auth, adminMiddleware, logsController.listarLogs);
 
 console.log("Logs Routes Loaded");
 

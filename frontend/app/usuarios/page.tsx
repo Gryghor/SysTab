@@ -27,6 +27,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import api from "@/lib/api"
+import { ReportDownloadButton } from "@/app/components/ReportDownloadButton"
+import { useAuth } from "@/hooks/useAuth"
 
 interface Usuario {
   id: number;
@@ -52,6 +54,8 @@ export default function Usuarios() {
   const [tabletVinculado, setTabletVinculado] = useState(false)
   const tableRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
+  const { user } = useAuth()
+  const isAdmin = user?.role === "admin"
 
   useEffect(() => {
     api.get("/usuarios")
@@ -203,7 +207,7 @@ export default function Usuarios() {
         </div>
 
         {/* Content */}
-        <div className="relative z-10 container mx-auto py-6 px-4 max-w-6xl">
+        <div className="relative z-10 container mx-auto py-6 px-4 max-w-[1400px]">
           {/* Usuarios Container */}
           <div className="bg-white/90 backdrop-blur-sm rounded-xl w-full p-6 shadow-xl border border-gray-100">
             <div className="flex flex-col space-y-4 mb-6">
@@ -234,6 +238,8 @@ export default function Usuarios() {
                       <Filter className="h-4 w-4 mr-2" />
                       Filtros {showFilters && <span className="ml-1 text-xs">(Ativos)</span>}
                     </Button>
+
+                    <ReportDownloadButton type="usuarios" />
 
                     <Link href="/usuarios/novo">
                       <Button
@@ -309,7 +315,7 @@ export default function Usuarios() {
 
             {/* Modern Table */}
             <Card className="bg-white rounded-xl overflow-hidden shadow-md border border-gray-100">
-              <div ref={tableRef} className="max-h-[calc(100vh-280px)] overflow-y-auto">
+              <div ref={tableRef} className="systab-table-scroll systab-table-wide max-h-[calc(100vh-280px)] overflow-y-auto">
                 <table className="w-full">
                   <thead className="bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white sticky top-0">
                     <tr>
@@ -371,15 +377,17 @@ export default function Usuarios() {
                                   <Edit className="h-4 w-4" />
                                 </Button>
                               </Link>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 text-gray-600 hover:text-red-600 hover:bg-red-50"
-                                title="Excluir"
-                                onClick={() => handleDeleteUser(usuario)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              {isAdmin && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-gray-600 hover:text-red-600 hover:bg-red-50"
+                                  title="Excluir"
+                                  onClick={() => handleDeleteUser(usuario)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
                               <Popover>
                                 <PopoverTrigger asChild>
                                   <Button
@@ -452,30 +460,32 @@ export default function Usuarios() {
                                         >
                                           <Download className="h-4 w-4 mr-2" /> Baixar
                                         </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="w-full justify-start text-red-700 hover:bg-red-50"
-                                          onClick={async () => {
-                                            try {
-                                              await api.delete(`/usuarios/${usuario.id}/termo`);
-                                              toast({
-                                                title: 'Termo Excluído',
-                                                description: 'O termo foi excluído com sucesso.',
-                                                variant: 'success',
-                                              });
-                                              setUsuarios((prev) => prev.map((u) => u.id === usuario.id ? { ...u, termoAssinado: false } : u));
-                                            } catch (err: any) {
-                                              toast({
-                                                title: 'Error deleting termo',
-                                                description: err?.response?.data?.error || err.message || 'Unknown error.',
-                                                variant: 'destructive',
-                                              });
-                                            }
-                                          }}
-                                        >
-                                          <Trash2 className="h-4 w-4 mr-2" /> Excluir Termo
-                                        </Button>
+                                        {isAdmin && (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="w-full justify-start text-red-700 hover:bg-red-50"
+                                            onClick={async () => {
+                                              try {
+                                                await api.delete(`/usuarios/${usuario.id}/termo`);
+                                                toast({
+                                                  title: 'Termo Excluído',
+                                                  description: 'O termo foi excluído com sucesso.',
+                                                  variant: 'success',
+                                                });
+                                                setUsuarios((prev) => prev.map((u) => u.id === usuario.id ? { ...u, termoAssinado: false } : u));
+                                              } catch (err: any) {
+                                                toast({
+                                                  title: 'Erro ao excluir termo',
+                                                  description: err?.response?.data?.error || err.message || 'Erro desconhecido.',
+                                                  variant: 'destructive',
+                                                });
+                                              }
+                                            }}
+                                          >
+                                            <Trash2 className="h-4 w-4 mr-2" /> Excluir Termo
+                                          </Button>
+                                        )}
                                         <div className="text-xs text-gray-500 mt-2">Termo anexado</div>
                                       </React.Fragment>
                                     ) : (

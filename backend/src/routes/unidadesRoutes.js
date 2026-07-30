@@ -6,7 +6,7 @@ const admin = require("../middlewares/adminMiddleware");
 
 router.post("/", auth, admin, unidadesController.criarUnidade);
 router.get("/", auth, unidadesController.listarUnidades);
-//router.put(":id", auth, admin, unidadesController.editarUnidade);
+router.put("/:id", auth, admin, unidadesController.editarUnidade);
 router.delete("/:id", auth, admin, unidadesController.deletarUnidade);
 
 console.log('Unidades routes loaded!');

@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription
 } from "@/components/ui/dialog"
@@ -16,6 +17,7 @@ import { Navbar } from "../../components/layout/navbar"
 import { Footer } from "../../components/layout/footer"
 import { useToast } from "@/hooks/use-toast"
 import api from "@/lib/api"
+import { formatTechnicalDetails, generateLogSummary } from "@/lib/log-summary"
 
 interface LogEntry {
   idLog: number
@@ -36,6 +38,13 @@ const ACAO_STYLES: Record<string, string> = {
   DESVINCULACAO: "border-amber-300 bg-amber-50 text-amber-700",
   FECHAMENTO: "border-gray-300 bg-gray-100 text-gray-700",
   REABERTURA: "border-sky-300 bg-sky-50 text-sky-700",
+  ATIVACAO: "border-emerald-300 bg-emerald-50 text-emerald-700",
+  DESATIVACAO: "border-amber-300 bg-amber-50 text-amber-700",
+  RESET_SENHA: "border-violet-300 bg-violet-50 text-violet-700",
+  CONSULTA_SENHA_PROVISORIA: "border-cyan-300 bg-cyan-50 text-cyan-700",
+  TROCA_SENHA_PRIMEIRO_ACESSO: "border-indigo-300 bg-indigo-50 text-indigo-700",
+  UPLOAD_TERMO: "border-teal-300 bg-teal-50 text-teal-700",
+  EXCLUSAO_TERMO: "border-rose-300 bg-rose-50 text-rose-700",
 }
 
 const ACAO_LABELS: Record<string, string> = {
@@ -46,21 +55,20 @@ const ACAO_LABELS: Record<string, string> = {
   DESVINCULACAO: "Desvinculação",
   FECHAMENTO: "Fechamento",
   REABERTURA: "Reabertura",
+  ATIVACAO: "Ativação",
+  DESATIVACAO: "Desativação",
+  RESET_SENHA: "Redefinição de senha",
+  CONSULTA_SENHA_PROVISORIA: "Consulta de senha provisória",
+  TROCA_SENHA_PRIMEIRO_ACESSO: "Troca da senha de primeiro acesso",
+  UPLOAD_TERMO: "Anexo de termo",
+  EXCLUSAO_TERMO: "Exclusão de termo",
 }
 
 const ENTIDADE_LABELS: Record<string, string> = {
   tablet: "Tablet",
   usuario: "Usuário",
   chamado: "Chamado",
-}
-
-function formatDetalhes(raw: string | null) {
-  if (!raw) return null
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2)
-  } catch {
-    return raw
-  }
+  login: "Conta de acesso",
 }
 
 export default function AdminLogsPage() {
@@ -129,13 +137,14 @@ export default function AdminLogsPage() {
           <div className="bg-white/90 backdrop-blur-sm rounded-xl w-full p-6 shadow-xl border border-gray-100">
             <div className="flex flex-col space-y-4 mb-6">
               <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-                <h2 className="text-3xl font-light text-transparent bg-clip-text bg-gradient-to-r from-[#0948a7] to-[#298ed3] inline-block">
-                  <span className="font-bold flex items-center gap-2">
+
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <h2 className="flex items-center gap-2 text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#0948a7] to-[#298ed3]">
                     <ScrollText className="h-7 w-7 text-[#0948a7]" />
                     Logs
-                  </span>{" "}
-                  <span className="text-gray-400 text-xl">| Auditoria do Sistema</span>
-                </h2>
+                  </h2>
+                  <span className="text-xl text-gray-400">| Auditoria do Sistema</span>
+                </div>
               </div>
 
               <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 flex flex-wrap gap-4 items-end">
@@ -187,8 +196,33 @@ export default function AdminLogsPage() {
               </div>
             </div>
 
+            <div data-systab-pagination className="flex items-center justify-between mb-3 text-sm text-gray-600">
+              <span>{total} registro(s) encontrado(s)</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full"
+                  disabled={page <= 1 || loading}
+                  onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span>Página {page} de {totalPages}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="rounded-full"
+                  disabled={page >= totalPages || loading}
+                  onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
             <Card className="bg-white rounded-xl overflow-hidden shadow-md border border-gray-100">
-              <div className="max-h-[calc(100vh-360px)] overflow-y-auto">
+              <div className="systab-table-scroll systab-table-wide max-h-[calc(100vh-360px)] overflow-y-auto">
                 <table className="w-full">
                   <thead className="bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white sticky top-0">
                     <tr>
@@ -250,30 +284,6 @@ export default function AdminLogsPage() {
               </div>
             </Card>
 
-            <div className="flex items-center justify-between mt-4 text-sm text-gray-600">
-              <span>{total} registro(s) encontrado(s)</span>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full"
-                  disabled={page <= 1 || loading}
-                  onClick={() => setPage((p) => Math.max(p - 1, 1))}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span>Página {page} de {totalPages}</span>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="rounded-full"
-                  disabled={page >= totalPages || loading}
-                  onClick={() => setPage((p) => Math.min(p + 1, totalPages))}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
           </div>
         </div>
       </main>
@@ -281,18 +291,55 @@ export default function AdminLogsPage() {
       <Footer />
 
       <Dialog open={!!detalhesAberto} onOpenChange={(open) => !open && setDetalhesAberto(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
               {detalhesAberto ? `${ACAO_LABELS[detalhesAberto.acao] || detalhesAberto.acao} - ${ENTIDADE_LABELS[detalhesAberto.entidade] || detalhesAberto.entidade} #${detalhesAberto.entidadeId ?? "-"}` : ""}
             </DialogTitle>
             <DialogDescription>
-              {detalhesAberto && `${detalhesAberto.nomeResponsavel || "Responsável desconhecido"} em ${new Date(detalhesAberto.dataHora).toLocaleString("pt-BR")}`}
+              Consulte o resumo da ação ou os dados técnicos registrados para auditoria.
             </DialogDescription>
           </DialogHeader>
-          <pre className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs overflow-auto max-h-96 whitespace-pre-wrap">
-            {detalhesAberto ? (formatDetalhes(detalhesAberto.detalhes) || "Sem detalhes adicionais.") : ""}
-          </pre>
+          {detalhesAberto && (
+            <Tabs defaultValue="resumo" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 rounded-lg">
+                <TabsTrigger value="resumo">Resumo da ação</TabsTrigger>
+                <TabsTrigger value="tecnico">Dados técnicos</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="resumo" className="mt-4 space-y-4">
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-blue-600">O que aconteceu</p>
+                  <p className="text-base leading-relaxed text-gray-800">{generateLogSummary(detalhesAberto)}</p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs text-gray-500">Ação</p>
+                    <p className="font-medium">{ACAO_LABELS[detalhesAberto.acao] || detalhesAberto.acao}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Registro afetado</p>
+                    <p className="font-medium">{ENTIDADE_LABELS[detalhesAberto.entidade] || detalhesAberto.entidade} #{detalhesAberto.entidadeId ?? "-"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Executado por</p>
+                    <p className="font-medium">{detalhesAberto.nomeResponsavel || "Responsável desconhecido"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500">Data e hora</p>
+                    <p className="font-medium">{new Date(detalhesAberto.dataHora).toLocaleString("pt-BR")}</p>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="tecnico" className="mt-4">
+                <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs">
+                  {formatTechnicalDetails(detalhesAberto.detalhes) || "Sem detalhes adicionais."}
+                </pre>
+                <p className="mt-2 text-xs text-gray-500">Conteúdo original armazenado no log para conferência técnica.</p>
+              </TabsContent>
+            </Tabs>
+          )}
         </DialogContent>
       </Dialog>
     </div>

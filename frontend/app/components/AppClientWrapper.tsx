@@ -1,24 +1,51 @@
 "use client"
 
 import { useEffect } from "react"
+import { usePathname, useRouter } from "next/navigation"
 import { Toaster } from "@/components/ui/toaster"
+import { ThemeProvider } from "@/components/theme-provider"
+
+function lerUsuarioArmazenado() {
+    try {
+        return JSON.parse(localStorage.getItem("usuario") || "null")
+    } catch {
+        localStorage.removeItem("usuario")
+        return null
+    }
+}
 
 export default function AppClientWrapper({ children }: { children: React.ReactNode }) {
+    const pathname = usePathname()
+    const router = useRouter()
+
     useEffect(() => {
-        // Auth logic
         const token = localStorage.getItem("token")
-        const pathname = window.location.pathname
+        const usuario = lerUsuarioArmazenado()
+
         if (!token && pathname !== "/login") {
-            window.location.href = "/login"
-            return
-        }
-        if (token && pathname === "/login") {
-            window.location.href = "/"
+            router.replace("/login")
             return
         }
 
-        // Inactivity timeout
-        let timeout: any
+        if (token && usuario?.trocaSenhaObrigatoria && pathname !== "/primeiro-acesso") {
+            router.replace("/primeiro-acesso")
+            return
+        }
+
+        if (token && !usuario?.trocaSenhaObrigatoria && pathname === "/primeiro-acesso") {
+            router.replace("/")
+            return
+        }
+
+        if (token && pathname === "/login") {
+            router.replace(usuario?.trocaSenhaObrigatoria ? "/primeiro-acesso" : "/")
+        }
+    }, [pathname, router])
+
+    useEffect(() => {
+        if (!localStorage.getItem("token")) return
+
+        let timeout: ReturnType<typeof setTimeout>
         function logout() {
             localStorage.removeItem("token")
             localStorage.removeItem("usuario")
@@ -31,10 +58,12 @@ export default function AppClientWrapper({ children }: { children: React.ReactNo
                 alert("Você foi desconectado por inatividade.")
             }, 15 * 60 * 1000)
         }
+
         window.addEventListener("mousemove", iniciarTimeoutInatividade)
         window.addEventListener("keydown", iniciarTimeoutInatividade)
         window.addEventListener("click", iniciarTimeoutInatividade)
         iniciarTimeoutInatividade()
+
         return () => {
             clearTimeout(timeout)
             window.removeEventListener("mousemove", iniciarTimeoutInatividade)
@@ -44,9 +73,9 @@ export default function AppClientWrapper({ children }: { children: React.ReactNo
     }, [])
 
     return (
-        <>
+        <ThemeProvider>
             {children}
             <Toaster />
-        </>
+        </ThemeProvider>
     )
 }

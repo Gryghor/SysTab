@@ -1,4 +1,4 @@
-const db = require("../config/db");
+﻿const db = require("../config/db");
 const path = require("path");
 const fs = require("fs");
 const PizZip = require("pizzip");
@@ -67,32 +67,45 @@ exports.criarTablet = async (req, res) => {
     if (!idTomb || !imei || !idEmp) {
         return res.status(400).json({ error: "Campos obrigatórios: idTomb, imei, idEmp." });
     }
+    let conn;
     try {
+        conn = await db.getConnection();
+        await conn.beginTransaction();
         let userToInsert = null;
         let nomeUserVinculado = null;
         if (idUser) {
-            // Get user name
-            const [userRows] = await db.query("SELECT nomeUser FROM usuarios WHERE idUser = ?", [idUser]);
+            const [userRows] = await conn.query("SELECT nomeUser FROM usuarios WHERE idUser = ? FOR UPDATE", [idUser]);
             const nomeUser = userRows[0]?.nomeUser;
             if (!nomeUser) {
+                await conn.rollback();
                 return res.status(400).json({ error: "Usuário não encontrado." });
             }
-            // Only allow multiple tablets for 'Não Cadastrado'
-            if (nomeUser !== "Não Cadastrado") {
-                const [verifResult] = await db.query("SELECT idTab, idTomb FROM tablets WHERE idUser = ?", [idUser]);
-                if (verifResult.length > 0) {
-                    return res.status(400).json({
-                        error: `${nomeUser} já possui o tablet #${verifResult[0].idTomb} vinculado. Use "Remanejar" no tablet atual para transferi-lo para este usuário.`,
-                    });
-                }
+            const [verifResult] = await conn.query("SELECT idTab, idTomb FROM tablets WHERE idUser = ? FOR UPDATE", [idUser]);
+            if (verifResult.length > 0) {
+                await conn.rollback();
+                return res.status(400).json({
+                    error: `${nomeUser} já possui o tablet #${verifResult[0].idTomb} vinculado. Use "Remanejar" no tablet atual para transferi-lo para este usuário.`,
+                });
             }
             userToInsert = idUser;
             nomeUserVinculado = nomeUser;
         }
         const sql = "INSERT INTO tablets (idTomb, imei, idUser, idEmp) VALUES (?, ?, ?, ?)";
-        const [result] = await db.query(sql, [idTomb, imei, userToInsert, idEmp]);
+        const [result] = await conn.query(sql, [idTomb, imei, userToInsert, idEmp]);
 
-        registrarLog({
+        if (userToInsert !== null) {
+            await conn.query(
+                `INSERT INTO tablet_usuario_historico
+                 (idTab, idTombSnapshot, idUserAnterior, nomeUserAnterior, idUserNovo, nomeUserNovo,
+                  idLoginResponsavel, acao, motivo, rowVersionAnterior, rowVersionNova)
+                 VALUES (?, ?, NULL, NULL, ?, ?, ?, 'VINCULACAO_INICIAL', ?, 0, 1)`,
+                [result.insertId, idTomb, userToInsert, nomeUserVinculado, req.usuario?.idLogin || null, "Vínculo realizado no cadastro do tablet"]
+            );
+        }
+
+        await conn.commit();
+
+        await registrarLog({
             acao: "CRIACAO",
             entidade: "tablet",
             entidadeId: result.insertId,
@@ -102,6 +115,9 @@ exports.criarTablet = async (req, res) => {
 
         res.status(201).json({ message: "Tablet criado com sucesso.", idTab: result.insertId });
     } catch (err) {
+        if (conn) {
+            try { await conn.rollback(); } catch (_) { /* noop */ }
+        }
         const msg = mapDbError(err, {
             duplicateFields: {
                 imei: "Este IMEI já está cadastrado em outro tablet.",
@@ -111,6 +127,8 @@ exports.criarTablet = async (req, res) => {
             fallback: "Erro ao criar tablet.",
         });
         res.status(err?.code === "ER_DUP_ENTRY" ? 409 : 500).json({ error: msg });
+    } finally {
+        conn?.release();
     }
 };
 
@@ -162,29 +180,6 @@ exports.buscarTablet = async (req, res) => {
     }
 };
 
-// BUSCAR TABLET POR ID
-exports.buscarTablet = async (req, res) => {
-    const { tombamento, imei } = req.query;
-    if (!tombamento && !imei) {
-        return res.status(400).json({ error: "Informe tombamento ou IMEI." });
-    }
-    const sql = `
-    SELECT t.*, u.nomeUser AS usuario, un.nomeUnidade AS unidade, r.numReg AS regional, e.nomeEmp AS empresa
-    FROM tablets t
-    JOIN usuarios u ON t.idUser = u.idUser
-    JOIN unidades un ON u.idUnidade = un.idUnidade
-    JOIN regionais r ON un.idReg = r.idReg
-    JOIN empresas e ON t.idEmp = e.idEmp
-    WHERE t.idTomb = ? OR t.imei = ?
-    `;
-    try {
-        const [result] = await db.query(sql, [tombamento, imei]);
-        res.json(result);
-    } catch (err) {
-        res.status(500).json({ error: "Erro na busca." });
-    }
-};
-
 
 // BUSCAR TABLET POR ID
 exports.buscarTabletPorId = async (req, res) => {
@@ -211,60 +206,46 @@ exports.buscarTabletPorId = async (req, res) => {
 // EDITAR TABLET
 exports.editarTablet = async (req, res) => {
     const { id } = req.params;
-    const { idTomb, imei, idUser, idEmp } = req.body;
+    const { idTomb, imei, idEmp, rowVersion } = req.body;
+    if (!idTomb || !imei || !idEmp || !Number.isInteger(Number(rowVersion))) {
+        return res.status(400).json({ error: "Campos obrigatórios: idTomb, imei, idEmp e rowVersion." });
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body, "idUser")) {
+        return res.status(400).json({ error: "O vínculo do usuário não pode ser alterado nesta edição. Use Remanejar." });
+    }
     try {
         const [beforeRows] = await db.query("SELECT * FROM tablets WHERE idTab = ?", [id]);
         if (beforeRows.length === 0) return res.status(404).json({ error: "Tablet não encontrado." });
         const before = beforeRows[0];
-
-        let userToUpdate = null;
-        let nomeUserVinculado = null;
-        if (idUser === null || idUser === undefined) {
-            userToUpdate = null;
-        } else {
-            // Get user name
-            const [userRows] = await db.query("SELECT nomeUser FROM usuarios WHERE idUser = ?", [idUser]);
-            const nomeUser = userRows[0]?.nomeUser;
-            if (!nomeUser) {
-                return res.status(400).json({ error: "Usuário não encontrado." });
-            }
-            // Only allow multiple tablets for 'Não Cadastrado'
-            if (nomeUser !== "Não Cadastrado") {
-                const [verifResult] = await db.query("SELECT idTab, idTomb FROM tablets WHERE idUser = ? AND idTab != ?", [idUser, id]);
-                if (verifResult.length > 0) {
-                    return res.status(400).json({
-                        error: `${nomeUser} já possui outro tablet vinculado (#${verifResult[0].idTomb}). Use "Remanejar" para transferir um tablet entre usuários.`,
-                    });
-                }
-            }
-            userToUpdate = idUser;
-            nomeUserVinculado = nomeUser;
-        }
         const sql = `
         UPDATE tablets
-        SET idTomb = ?, imei = ?, idUser = ?, idEmp = ?
-        WHERE idTab = ?
+        SET idTomb = ?, imei = ?, idEmp = ?, rowVersion = rowVersion + 1
+        WHERE idTab = ? AND rowVersion = ?
         `;
-        await db.query(sql, [idTomb, imei, userToUpdate, idEmp, id]);
+        const [result] = await db.query(sql, [idTomb, imei, idEmp, id, Number(rowVersion)]);
+        if (result.affectedRows === 0) {
+            return res.status(409).json({
+                error: "Este tablet foi alterado por outro operador. Recarregue a página antes de salvar novamente.",
+            });
+        }
 
-        registrarLog({
+        await registrarLog({
             acao: "EDICAO",
             entidade: "tablet",
             entidadeId: Number(id),
             req,
             detalhes: {
                 antes: { idTomb: before.idTomb, imei: before.imei, idUser: before.idUser, idEmp: before.idEmp },
-                depois: { idTomb, imei, idUser: userToUpdate, nomeUser: nomeUserVinculado, idEmp },
+                depois: { idTomb, imei, idUser: before.idUser, idEmp, rowVersion: Number(rowVersion) + 1 },
             },
         });
 
-        res.json({ message: "Tablet atualizado com sucesso." });
+        res.json({ message: "Tablet atualizado com sucesso.", rowVersion: Number(rowVersion) + 1 });
     } catch (err) {
         const msg = mapDbError(err, {
             duplicateFields: {
                 imei: "Este IMEI já está cadastrado em outro tablet.",
                 idTomb: "Este Tombamento já está cadastrado em outro tablet.",
-                idUser: "Este usuário já possui outro tablet vinculado. Use \"Remanejar\" para transferir.",
             },
             fallback: "Erro ao atualizar tablet.",
         });
@@ -275,13 +256,20 @@ exports.editarTablet = async (req, res) => {
 // REMANEJAR TABLET (transferir para outro usuário, ou desvincular, de forma atômica e auditada)
 exports.remanejarTablet = async (req, res) => {
     const { id } = req.params;
-    const { idUserDestino, motivo } = req.body;
+    const { idUserDestino, motivo, rowVersion } = req.body;
+    if (!String(motivo || "").trim() || String(motivo).trim().length < 5) {
+        return res.status(400).json({ error: "Informe um motivo com pelo menos 5 caracteres para alterar o vínculo." });
+    }
+    if (!Number.isInteger(Number(rowVersion))) {
+        return res.status(400).json({ error: "rowVersion é obrigatório para remanejar o tablet." });
+    }
     const destino = (idUserDestino === undefined || idUserDestino === null || idUserDestino === "")
         ? null
         : idUserDestino;
 
-    const conn = await db.getConnection();
+    let conn;
     try {
+        conn = await db.getConnection();
         await conn.beginTransaction();
 
         const [tabletRows] = await conn.query(
@@ -296,6 +284,12 @@ exports.remanejarTablet = async (req, res) => {
             return res.status(404).json({ error: "Tablet não encontrado." });
         }
         const tablet = tabletRows[0];
+        if (Number(tablet.rowVersion) !== Number(rowVersion)) {
+            await conn.rollback();
+            return res.status(409).json({
+                error: "O vínculo foi alterado por outro operador. Recarregue os dados antes de continuar.",
+            });
+        }
 
         const mesmoDono = (tablet.idUser === null && destino === null) || String(tablet.idUser) === String(destino);
         if (mesmoDono) {
@@ -305,31 +299,87 @@ exports.remanejarTablet = async (req, res) => {
 
         let nomeUserDestino = null;
         if (destino !== null) {
-            const [destRows] = await conn.query("SELECT nomeUser FROM usuarios WHERE idUser = ?", [destino]);
+            const [destRows] = await conn.query(
+                `SELECT u.nomeUser, u.cpf, u.telUser, u.idUnidade, un.nomeUnidade, r.numReg
+                 FROM usuarios u
+                 LEFT JOIN unidades un ON un.idUnidade = u.idUnidade
+                 LEFT JOIN regionais r ON r.idReg = un.idReg
+                 WHERE u.idUser = ?`,
+                [destino]
+            );
             if (destRows.length === 0) {
                 await conn.rollback();
                 return res.status(400).json({ error: "Usuário de destino não encontrado." });
             }
-            nomeUserDestino = destRows[0].nomeUser;
+            const usuarioDestino = destRows[0];
+            nomeUserDestino = usuarioDestino.nomeUser;
+            const camposFaltantes = [];
+            if (!String(usuarioDestino.cpf || "").trim()) camposFaltantes.push("cpf");
+            if (!String(usuarioDestino.telUser || "").trim()) camposFaltantes.push("telefone");
+            if (!usuarioDestino.idUnidade) camposFaltantes.push("unidade");
+            if (usuarioDestino.idUnidade && (!usuarioDestino.nomeUnidade || usuarioDestino.numReg == null)) {
+                camposFaltantes.push("regional");
+            }
+            if (camposFaltantes.length > 0) {
+                await conn.rollback();
+                return res.status(422).json({
+                    error: "Complete os dados do usuário de destino antes do remanejamento.",
+                    code: "DESTINATION_USER_INCOMPLETE",
+                    camposFaltantes,
+                    usuario: {
+                        idUser: Number(destino),
+                        nomeUser: usuarioDestino.nomeUser,
+                        cpf: usuarioDestino.cpf || "",
+                        telUser: usuarioDestino.telUser || "",
+                        idUnidade: usuarioDestino.idUnidade || null,
+                    },
+                });
+            }
 
-            if (nomeUserDestino !== "Não Cadastrado") {
-                const [ownRows] = await conn.query(
-                    "SELECT idTab, idTomb FROM tablets WHERE idUser = ? AND idTab != ? FOR UPDATE",
-                    [destino, id]
-                );
-                if (ownRows.length > 0) {
-                    await conn.rollback();
-                    return res.status(400).json({
-                        error: `${nomeUserDestino} já possui o tablet #${ownRows[0].idTomb}. Remaneje esse tablet primeiro, ou escolha outro usuário de destino.`,
-                    });
-                }
+            const [ownRows] = await conn.query(
+                "SELECT idTab, idTomb FROM tablets WHERE idUser = ? AND idTab != ? FOR UPDATE",
+                [destino, id]
+            );
+            if (ownRows.length > 0) {
+                await conn.rollback();
+                return res.status(400).json({
+                    error: `${nomeUserDestino} já possui o tablet #${ownRows[0].idTomb}. Remaneje esse tablet primeiro, ou escolha outro usuário de destino.`,
+                });
             }
         }
 
-        await conn.query("UPDATE tablets SET idUser = ? WHERE idTab = ?", [destino, id]);
+        const novaVersao = Number(tablet.rowVersion) + 1;
+        const [updateResult] = await conn.query(
+            "UPDATE tablets SET idUser = ?, rowVersion = rowVersion + 1 WHERE idTab = ? AND rowVersion = ?",
+            [destino, id, Number(rowVersion)]
+        );
+        if (updateResult.affectedRows === 0) {
+            await conn.rollback();
+            return res.status(409).json({ error: "Conflito de concorrência ao atualizar o vínculo." });
+        }
+
+        await conn.query(
+            `INSERT INTO tablet_usuario_historico
+             (idTab, idTombSnapshot, idUserAnterior, nomeUserAnterior, idUserNovo, nomeUserNovo,
+              idLoginResponsavel, acao, motivo, rowVersionAnterior, rowVersionNova)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                id,
+                tablet.idTomb,
+                tablet.idUser,
+                tablet.nomeUserAtual,
+                destino,
+                nomeUserDestino,
+                req.usuario?.idLogin || null,
+                destino === null ? "DESVINCULACAO" : "REMANEJAMENTO",
+                String(motivo).trim(),
+                Number(rowVersion),
+                novaVersao,
+            ]
+        );
         await conn.commit();
 
-        registrarLog({
+        await registrarLog({
             acao: destino === null ? "DESVINCULACAO" : "REMANEJAMENTO",
             entidade: "tablet",
             entidadeId: Number(id),
@@ -340,18 +390,23 @@ exports.remanejarTablet = async (req, res) => {
                 donoAnteriorNome: tablet.nomeUserAtual,
                 donoNovoId: destino,
                 donoNovoNome: nomeUserDestino,
-                motivo: motivo || null,
+                motivo: String(motivo).trim(),
+                rowVersionAnterior: Number(rowVersion),
+                rowVersionNova: novaVersao,
             },
         });
 
         res.json({
             message: destino === null ? "Tablet desvinculado com sucesso." : "Tablet remanejado com sucesso.",
+            rowVersion: novaVersao,
         });
     } catch (err) {
-        try { await conn.rollback(); } catch (_) { /* noop */ }
+        if (conn) {
+            try { await conn.rollback(); } catch (_) { /* noop */ }
+        }
         res.status(500).json({ error: mapDbError(err, { fallback: "Erro ao remanejar tablet." }) });
     } finally {
-        conn.release();
+        conn?.release();
     }
 };
 
@@ -365,7 +420,7 @@ exports.deletarTablet = async (req, res) => {
 
         await db.query("DELETE FROM tablets WHERE idTab = ?", [id]);
 
-        registrarLog({
+        await registrarLog({
             acao: "EXCLUSAO",
             entidade: "tablet",
             entidadeId: Number(id),

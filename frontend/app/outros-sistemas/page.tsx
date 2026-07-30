@@ -63,7 +63,7 @@ export default function OutrosSistemas() {
         </div>
 
         {/* Content */}
-        <div className="relative z-10 container mx-auto py-6 px-4 max-w-6xl">
+        <div className="relative z-10 container mx-auto py-6 px-4 max-w-[1400px]">
           {/* Outros Sistemas Container */}
           <div className="bg-white/90 backdrop-blur-sm rounded-xl w-full p-6 shadow-xl border border-gray-100">
             <div className="mb-6">

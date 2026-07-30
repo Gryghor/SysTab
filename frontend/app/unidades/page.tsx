@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import api from "@/lib/api"
+import { ReportDownloadButton } from "@/app/components/ReportDownloadButton"
 
 interface Unidade {
   id: number;
@@ -232,11 +233,11 @@ export default function Unidades() {
         <div className="absolute inset-0 z-0">
           <Image src="/beach-background.jpg" alt="Fundo de praia" fill className="object-cover" priority />
         </div>
-        <div className="relative z-10 container mx-auto py-6 px-4 max-w-6xl">
+        <div className="relative z-10 container mx-auto py-6 px-4 max-w-[1400px]">
           <div className="bg-white/90 backdrop-blur-sm rounded-xl w-full p-6 shadow-xl border border-gray-100">
             <div className="flex flex-col space-y-4 mb-6">
               <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
-                <h2 className="text-3xl font-light text-transparent bg-clip-text bg-gradient-to-r from-[#0948a7] to-[#298ed3] inline-block">
+                <h2 className="text-3xl font-light text-transparent bg-clip-text bg-gradient-to-r from-[#0948a7] to-[#298ed3] inline-block whitespace-nowrap">
                   <span className="font-bold">Unidades</span>{" "}
                   <span className="text-gray-400 text-xl">| Gerenciamento</span>
                 </h2>
@@ -260,15 +261,19 @@ export default function Unidades() {
                       <Filter className="h-4 w-4 mr-2" />
                       Filtros {showFilters && <span className="ml-1 text-xs">(Ativos)</span>}
                     </Button>
-                    <Link href="/unidades/nova">
-                      <Button
-                        className="rounded-full bg-gradient-to-r from-[#0948a7] to-[#298ed3] hover:from-[#083b8a] hover:to-[#1c7ab8] text-white"
-                        onClick={handleAddUnit}
-                      >
-                        <Plus className="h-4 w-4 mr-2" />
-                        Nova Unidade
-                      </Button>
-                    </Link>
+                    <ReportDownloadButton type="unidades" />
+
+                    {user?.role === "admin" && (
+                      <Link href="/unidades/nova">
+                        <Button
+                          className="rounded-full bg-gradient-to-r from-[#0948a7] to-[#298ed3] hover:from-[#083b8a] hover:to-[#1c7ab8] text-white"
+                          onClick={handleAddUnit}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Nova Unidade
+                        </Button>
+                      </Link>
+                    )}
                     {/* Gerar Termos de Responsabilidade Button */}
                     <Button
                       className="rounded-full bg-gradient-to-r from-[#0948a7] to-[#298ed3] hover:from-[#083b8a] hover:to-[#1c7ab8] text-white"
@@ -446,7 +451,7 @@ export default function Unidades() {
 
             {/* Modern Table */}
             <Card className="bg-white rounded-xl overflow-hidden shadow-md border border-gray-100">
-              <div ref={tableRef} className="max-h-[calc(100vh-280px)] overflow-y-auto scrollbar-hide">
+              <div ref={tableRef} className="systab-table-scroll max-h-[calc(100vh-280px)] overflow-y-auto scrollbar-hide">
                 <table className="w-full">
                   <thead className="bg-gradient-to-r from-[#0948a7] to-[#298ed3] text-white sticky top-0">
                     <tr>
@@ -476,7 +481,7 @@ export default function Unidades() {
                           </td>
                           <td className="py-2 px-3">
                             <div className="flex justify-center space-x-2">
-                              {user?.role === "admin" && (
+                    {user?.role === "admin" && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -509,7 +514,7 @@ export default function Unidades() {
       <Footer />
 
       {/* Dialog de confirmação de exclusão */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+      <AlertDialog open={user?.role === "admin" && isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>

@@ -26,10 +26,11 @@ exports.listarRegionais = async (req, res) => {
 
 exports.editarRegional = async (req, res) => {
     const { id } = req.params;
-    const { nome } = req.body;
-    const sql = "UPDATE regionais SET nome = ? WHERE idRegional = ?";
+    const { numReg } = req.body;
+    if (!numReg) return res.status(400).json({ error: "Número da regional é obrigatório." });
+    const sql = "UPDATE regionais SET numReg = ? WHERE idReg = ?";
     try {
-        await db.query(sql, [nome, id]);
+        await db.query(sql, [numReg, id]);
         res.json({ message: "Regional atualizada com sucesso." });
     } catch (err) {
         res.status(500).json({ error: "Erro ao atualizar regional." });
@@ -40,7 +41,7 @@ exports.editarRegional = async (req, res) => {
 exports.deletarRegional = async (req, res) => {
     const { id } = req.params;
     try {
-        await db.query("DELETE FROM regionais WHERE idRegional = ?", [id]);
+        await db.query("DELETE FROM regionais WHERE idReg = ?", [id]);
         res.json({ message: "Regional deletada com sucesso." });
     } catch (err) {
         res.status(500).json({ error: "Erro ao deletar regional." });

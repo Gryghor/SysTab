@@ -1,4 +1,4 @@
-const db = require('../config/db');
+﻿const db = require('../config/db');
 const path = require('path');
 const fs = require('fs');
 const PizZip = require('pizzip');
@@ -10,16 +10,35 @@ const { registrarLog } = require('../utils/logger');
 
 exports.criarChamado = async (req, res) => {
     const { idTab, descricao, item } = req.body;
-    const sql = 'INSERT INTO chamados (idTab, descricao, item, status, dataEntrada) VALUES (?, ?, ?, "Aberto", NOW())';
+    if (!idTab || !descricao) {
+        return res.status(400).json({ error: "Tablet e descrição são obrigatórios." });
+    }
+    const sql = `
+        INSERT INTO chamados
+        (idTab, descricao, item, status, dataEntrada, idUserOriginal, nomeUserSnapshot,
+         telUserSnapshot, cpfSnapshot, idUnidadeSnapshot, nomeUnidadeSnapshot, regionalSnapshot,
+         idLoginCriador, nomeCriadorSnapshot)
+        SELECT t.idTab, ?, ?, 'Aberto', NOW(), t.idUser, u.nomeUser, u.telUser, u.cpf,
+               u.idUnidade, un.nomeUnidade, r.numReg, criador.idLogin, criador.nome
+        FROM tablets t
+        LEFT JOIN usuarios u ON u.idUser = t.idUser
+        LEFT JOIN unidades un ON un.idUnidade = u.idUnidade
+        LEFT JOIN regionais r ON r.idReg = un.idReg
+        LEFT JOIN login criador ON criador.idLogin = ?
+        WHERE t.idTab = ?
+    `;
     try {
-        const [result] = await db.query(sql, [idTab, descricao, item]);
+        const [result] = await db.query(sql, [descricao, item, Number(req.usuario.idLogin), idTab]);
+        if (result.affectedRows === 0) {
+            return res.status(400).json({ error: "Tablet não encontrado." });
+        }
 
-        registrarLog({
+        await registrarLog({
             acao: "CRIACAO",
             entidade: "chamado",
             entidadeId: result.insertId,
             req,
-            detalhes: { idTab, item, descricao },
+            detalhes: { idTab, item, descricao, idLoginCriador: Number(req.usuario.idLogin) },
         });
 
         res.status(201).json({ message: "Chamado criado com sucesso.", idChamado: result.insertId });
@@ -32,10 +51,12 @@ exports.criarChamado = async (req, res) => {
 
 exports.listarChamados = async (req, res) => {
     const sql = `
-        SELECT chamados.*, tablets.idTomb, tablets.imei, usuarios.nomeUser, usuarios.telUser
-        FROM chamados
-        JOIN tablets ON chamados.idTab = tablets.idTab
-        LEFT JOIN usuarios ON tablets.idUser = usuarios.idUser
+        SELECT c.*, t.idTomb, t.imei,
+               COALESCE(c.nomeUserSnapshot, usuarioAtual.nomeUser) AS nomeUser,
+               COALESCE(c.telUserSnapshot, usuarioAtual.telUser) AS telUser
+        FROM chamados c
+        JOIN tablets t ON c.idTab = t.idTab
+        LEFT JOIN usuarios usuarioAtual ON t.idUser = usuarioAtual.idUser
     `;
     try {
         const [results] = await db.query(sql);
@@ -49,14 +70,19 @@ exports.listarChamados = async (req, res) => {
 exports.buscarChamadoPorIdChamado = async (req, res) => {
     const { id } = req.params;
     const sql = `
-        SELECT chamados.*, tablets.*, usuarios.nomeUser, usuarios.telUser, unidades.nomeUnidade, regionais.numReg AS nomeRegional, empresas.nomeEmp
-        FROM chamados
-        JOIN tablets ON chamados.idTab = tablets.idTab
-        LEFT JOIN usuarios ON tablets.idUser = usuarios.idUser
-        LEFT JOIN unidades ON usuarios.idUnidade = unidades.idUnidade
-        LEFT JOIN regionais ON unidades.idReg = regionais.idReg
-        LEFT JOIN empresas ON tablets.idEmp = empresas.idEmp
-        WHERE chamados.idChamado = ?
+        SELECT c.*, t.*,
+               COALESCE(c.nomeUserSnapshot, usuarioAtual.nomeUser) AS nomeUser,
+               COALESCE(c.telUserSnapshot, usuarioAtual.telUser) AS telUser,
+               COALESCE(c.nomeUnidadeSnapshot, unidadeAtual.nomeUnidade) AS nomeUnidade,
+               COALESCE(c.regionalSnapshot, regionalAtual.numReg) AS nomeRegional,
+               e.nomeEmp
+        FROM chamados c
+        JOIN tablets t ON c.idTab = t.idTab
+        LEFT JOIN usuarios usuarioAtual ON t.idUser = usuarioAtual.idUser
+        LEFT JOIN unidades unidadeAtual ON usuarioAtual.idUnidade = unidadeAtual.idUnidade
+        LEFT JOIN regionais regionalAtual ON unidadeAtual.idReg = regionalAtual.idReg
+        LEFT JOIN empresas e ON t.idEmp = e.idEmp
+        WHERE c.idChamado = ?
     `;
     try {
         const [results] = await db.query(sql, [id]);
@@ -112,7 +138,7 @@ exports.deletarChamado = async (req, res) => {
         }
         await db.query('DELETE FROM chamados WHERE idChamado = ?', [id]);
 
-        registrarLog({
+        await registrarLog({
             acao: "EXCLUSAO",
             entidade: "chamado",
             entidadeId: Number(id),
@@ -132,7 +158,7 @@ exports.deletarChamado = async (req, res) => {
 exports.atualizarChamado = async (req, res) => {
     const { id } = req.params;
     // Only allow fields that exist in chamados table
-    const allowedFields = ["idTab", "status", "item", "descricao", "dataSaida", "itensRecebidos"];
+    const allowedFields = ["status", "item", "descricao", "dataSaida", "itensRecebidos"];
     const updates = [];
     const values = [];
     for (const field of allowedFields) {
@@ -154,7 +180,7 @@ exports.atualizarChamado = async (req, res) => {
             return res.status(404).json({ error: "Chamado não encontrado." });
         }
 
-        registrarLog({
+        await registrarLog({
             acao: "EDICAO",
             entidade: "chamado",
             entidadeId: Number(id),
@@ -180,7 +206,7 @@ exports.fecharChamado = async (req, res) => {
             return res.status(404).json({ error: "Chamado não encontrado." });
         }
 
-        registrarLog({ acao: "FECHAMENTO", entidade: "chamado", entidadeId: Number(id), req });
+        await registrarLog({ acao: "FECHAMENTO", entidade: "chamado", entidadeId: Number(id), req });
 
         res.json({ message: "Chamado fechado com sucesso." });
     } catch (err) {
@@ -200,7 +226,7 @@ exports.reabrirChamado = async (req, res) => {
             return res.status(404).json({ error: "Chamado não encontrado." });
         }
 
-        registrarLog({ acao: "REABERTURA", entidade: "chamado", entidadeId: Number(id), req });
+        await registrarLog({ acao: "REABERTURA", entidade: "chamado", entidadeId: Number(id), req });
 
         res.json({ message: "Chamado reaberto com sucesso." });
     } catch (err) {
@@ -220,19 +246,21 @@ exports.gerarOS = async (req, res) => {
     }
     const sql = `
         SELECT 
-            chamados.idChamado, chamados.descricao, chamados.dataEntrada, chamados.item,
-            tablets.idTomb, tablets.imei, 
-            usuarios.nomeUser, usuarios.telUser, usuarios.cpf, 
-            unidades.nomeUnidade, 
-            regionais.numReg AS nomeRegional, 
-            empresas.nomeEmp, empresas.idEmp
-        FROM chamados
-        JOIN tablets ON chamados.idTab = tablets.idTab
-        JOIN usuarios ON tablets.idUser = usuarios.idUser
-        LEFT JOIN unidades ON usuarios.idUnidade = unidades.idUnidade
-        LEFT JOIN regionais ON unidades.idReg = regionais.idReg
-        LEFT JOIN empresas ON tablets.idEmp = empresas.idEmp
-        WHERE chamados.idChamado = ?
+            c.idChamado, c.descricao, c.dataEntrada, c.item,
+            t.idTomb, t.imei,
+            COALESCE(c.nomeUserSnapshot, usuarioAtual.nomeUser) AS nomeUser,
+            COALESCE(c.telUserSnapshot, usuarioAtual.telUser) AS telUser,
+            COALESCE(c.cpfSnapshot, usuarioAtual.cpf) AS cpf,
+            COALESCE(c.nomeUnidadeSnapshot, unidadeAtual.nomeUnidade) AS nomeUnidade,
+            COALESCE(c.regionalSnapshot, regionalAtual.numReg) AS nomeRegional,
+            e.nomeEmp, e.idEmp
+        FROM chamados c
+        JOIN tablets t ON c.idTab = t.idTab
+        LEFT JOIN usuarios usuarioAtual ON t.idUser = usuarioAtual.idUser
+        LEFT JOIN unidades unidadeAtual ON usuarioAtual.idUnidade = unidadeAtual.idUnidade
+        LEFT JOIN regionais regionalAtual ON unidadeAtual.idReg = regionalAtual.idReg
+        LEFT JOIN empresas e ON t.idEmp = e.idEmp
+        WHERE c.idChamado = ?
     `;
     try {
         const [results] = await db.query(sql, [id]);

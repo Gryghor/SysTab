@@ -42,10 +42,11 @@ exports.editarUnidade = async (req, res) => {
         return res.status(403).json({ error: 'Apenas administradores podem editar unidades.' });
     }
     const { id } = req.params;
-    const { nome, idRegional } = req.body;
-    const sql = "UPDATE unidades SET nome = ?, idRegional = ? WHERE idUnidade = ?";
+    const { nomeUnidade, idReg } = req.body;
+    if (!nomeUnidade || !idReg) return res.status(400).json({ error: "Nome da unidade e regional são obrigatórios." });
+    const sql = "UPDATE unidades SET nomeUnidade = ?, idReg = ? WHERE idUnidade = ?";
     try {
-        await db.query(sql, [nome, idRegional, id]);
+        await db.query(sql, [nomeUnidade, idReg, id]);
         res.json({ message: "Unidade atualizada com sucesso." });
     } catch (err) {
         res.status(500).json({ error: "Erro ao atualizar unidade." });
