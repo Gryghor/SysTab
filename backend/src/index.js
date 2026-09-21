@@ -13,6 +13,7 @@ const authRoutes = require('./routes/authRoutes.js');
 const logsRoutes = require('./routes/logsRoutes.js');
 const accessAccountsRoutes = require('./routes/accessAccountsRoutes.js');
 const reportsRoutes = require('./routes/reportsRoutes.js');
+const configuracoesRoutes = require('./routes/configuracoesRoutes.js');
 
 const app = express();
 
@@ -44,6 +45,7 @@ app.use('/regionais', regRoutes);
 app.use('/logs', logsRoutes);
 app.use('/admin/contas', accessAccountsRoutes);
 app.use('/relatorios', reportsRoutes);
+app.use('/configuracoes', configuracoesRoutes);
 
 module.exports = app;
 

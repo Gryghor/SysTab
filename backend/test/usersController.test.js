@@ -87,6 +87,28 @@ describe("cadastro de usuários", () => {
     expect(res.body.error).toContain("CPF");
   });
 
+  test("criarUsuario aceita CPF vazio quando a configuração está desligada", async () => {
+    db.query
+      .mockResolvedValueOnce([[{ valor: "0" }]])
+      .mockResolvedValueOnce([{ insertId: 26 }]);
+    const res = createResponse();
+
+    await users.criarUsuario(createRequest({ body: { nomeUser: "Maria", cpf: "", idUnidade: 2 } }), res);
+
+    expect(db.query.mock.calls[1]).toEqual([expect.stringContaining("INSERT INTO usuarios"), ["Maria", null, undefined, 2]]);
+    expect(res.statusCode).toBe(201);
+  });
+
+  test("criarUsuario mantém CPF obrigatório quando a configuração está ligada", async () => {
+    db.query.mockResolvedValueOnce([[{ valor: "1" }]]);
+    const res = createResponse();
+
+    await users.criarUsuario(createRequest({ body: { nomeUser: "Maria", cpf: "", idUnidade: 2 } }), res);
+
+    expect(res.statusCode).toBe(400);
+    expect(db.query).toHaveBeenCalledTimes(1);
+  });
+
   test("listarUsuarios aplica unidade e mapeia vínculo e termo", async () => {
     db.query.mockResolvedValueOnce([[
       { idUser: 1, nomeUser: "Maria", cpf: "123", telUser: "81", idUnidade: 2, nomeUnidade: "USF", idTab: 8, idTomb: 203001, imei: "123456789012345" },

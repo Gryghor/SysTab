@@ -136,6 +136,15 @@ async function applyMigration() {
     await add("login", "tokenVersion", "INT UNSIGNED NOT NULL DEFAULT 0");
     await add("login", "mustChangePassword", "TINYINT(1) NOT NULL DEFAULT 0");
     await add("login", "provisionalPasswordEncrypted", "TEXT NULL");
+
+    await db.query(`CREATE TABLE IF NOT EXISTS configuracoes (
+        chave VARCHAR(100) NOT NULL, valor VARCHAR(255) NOT NULL,
+        atualizadoEm TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (chave)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci`);
+    await db.query("INSERT INTO configuracoes (chave, valor) VALUES ('cpf_obrigatorio', '1') ON DUPLICATE KEY UPDATE chave = chave");
+    await db.query("ALTER TABLE usuarios MODIFY COLUMN cpf VARCHAR(14) NULL");
+    changed.push("configuracoes.cpf_obrigatorio", "usuarios.cpf nullable");
     return changed;
 }
 

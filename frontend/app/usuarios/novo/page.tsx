@@ -19,12 +19,17 @@ import api from "@/lib/api"
 export default function NovoUsuario() {
   const [nome, setNome] = useState("")
   const [cpf, setCpf] = useState("")
+  const [cpfObrigatorio, setCpfObrigatorio] = useState(true)
   const [telefone, setTelefone] = useState("")
   const [idUnidade, setIdUnidade] = useState("")
   const [unidades, setUnidades] = useState<any[]>([])
   const { toast } = useToast()
 
   useEffect(() => {
+    api.get("/configuracoes")
+      .then(res => setCpfObrigatorio(res.data?.cpfObrigatorio !== false))
+      .catch(() => setCpfObrigatorio(true))
+
     api.get("/unidades")
       .then(res => {
         setUnidades(Array.isArray(res.data)
@@ -73,16 +78,18 @@ export default function NovoUsuario() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!nome || !cpf || !idUnidade) {
+    if (!nome || !idUnidade || (cpfObrigatorio && !cpf)) {
       toast({
         title: "Erro ao salvar",
-        description: "Preencha todos os campos obrigatórios",
+        description: cpfObrigatorio
+          ? "Preencha todos os campos obrigatórios"
+          : "Nome e Unidade são obrigatórios",
         variant: "destructive",
       })
       return
     }
 
-    if (cpf.length < 14) {
+    if (cpf && cpf.length < 14) {
       toast({
         title: "CPF inválido",
         description: "Por favor, insira um CPF válido",
@@ -164,7 +171,7 @@ export default function NovoUsuario() {
 
                     <div className="space-y-2">
                       <Label htmlFor="cpf" className="text-gray-700">
-                        CPF <span className="text-red-500">*</span>
+                        CPF {cpfObrigatorio && <span className="text-red-500">*</span>}
                       </Label>
                       <Input
                         id="cpf"
@@ -172,7 +179,7 @@ export default function NovoUsuario() {
                         value={cpf}
                         onChange={handleCPFChange}
                         className="border-gray-200"
-                        required
+                        required={cpfObrigatorio}
                       />
                     </div>
 

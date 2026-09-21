@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { ArrowLeft, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,17 +15,24 @@ import { Footer } from "../../../components/layout/footer"
 import { useToast } from "@/hooks/use-toast"
 import api from "@/lib/api"
 
-export default function EditarUsuario({ params }: { params: { id: string } }) {
+export default function EditarUsuario() {
   const { toast } = useToast()
   const router = useRouter()
+  const params = useParams<{ id: string }>()
+  const usuarioId = params.id
 
   const [nome, setNome] = useState("")
   const [cpf, setCpf] = useState("")
+  const [cpfObrigatorio, setCpfObrigatorio] = useState(true)
   const [telefone, setTelefone] = useState("")
   const [idUnidade, setIdUnidade] = useState("")
   const [unidades, setUnidades] = useState<any[]>([])
 
   useEffect(() => {
+    api.get("/configuracoes")
+      .then(res => setCpfObrigatorio(res.data?.cpfObrigatorio !== false))
+      .catch(() => setCpfObrigatorio(true))
+
     api.get("/unidades")
       .then(res => {
         setUnidades(Array.isArray(res.data)
@@ -39,12 +46,13 @@ export default function EditarUsuario({ params }: { params: { id: string } }) {
 
     api.get("/usuarios")
       .then((res) => {
-        const usuario = res.data.find((u: any) => u.idUsuario == params.id || u.idUser == params.id || u.id == params.id)
+        const usuario = res.data.find((u: any) => u.idUsuario == usuarioId || u.idUser == usuarioId || u.id == usuarioId)
         if (usuario) {
           setNome(usuario.nomeUser || usuario.nome || "")
           setCpf(usuario.cpf || "")
           setTelefone(usuario.telUser || usuario.telefone || "")
-          setIdUnidade(String(usuario.idUnidade || usuario.unidadeId || usuario.idUnidade || ""))
+          const unidadeId = usuario.idUnidade ?? usuario.unidadeId ?? usuario.unidade?.idUnidade ?? usuario.unidade?.id
+          setIdUnidade(unidadeId === null || unidadeId === undefined ? "" : String(unidadeId))
         } else {
           toast({
             title: "Usuário não encontrado",
@@ -61,7 +69,7 @@ export default function EditarUsuario({ params }: { params: { id: string } }) {
           variant: "destructive",
         })
       })
-  }, [params.id, toast, router])
+  }, [usuarioId, toast, router])
 
   const formatCPF = (value: string) => {
     const digits = value.replace(/\D/g, "")
@@ -92,16 +100,18 @@ export default function EditarUsuario({ params }: { params: { id: string } }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!nome || !cpf || !idUnidade) {
+    if (!nome || !idUnidade || (cpfObrigatorio && !cpf)) {
       toast({
         title: "Erro ao salvar",
-        description: "Nome, CPF e Unidade são obrigatórios.",
+        description: cpfObrigatorio
+          ? "Nome, CPF e Unidade são obrigatórios."
+          : "Nome e Unidade são obrigatórios.",
         variant: "destructive",
       })
       return
     }
 
-    if (cpf.length < 14) {
+    if (cpf && cpf.length < 14) {
       toast({
         title: "CPF inválido",
         description: "Por favor, insira um CPF válido.",
@@ -111,7 +121,7 @@ export default function EditarUsuario({ params }: { params: { id: string } }) {
     }
 
     try {
-      await api.put(`/usuarios/${params.id}`, {
+      await api.put(`/usuarios/${usuarioId}`, {
         nomeUser: nome,
         cpf,
         telUser: telefone,
@@ -157,7 +167,7 @@ export default function EditarUsuario({ params }: { params: { id: string } }) {
                 </Button>
               </Link>
               <h2 className="text-3xl font-light text-transparent bg-clip-text bg-gradient-to-r from-[#0948a7] to-[#298ed3] inline-block">
-                <span className="font-bold">Editar Usuário #{params.id}</span>
+                <span className="font-bold">Editar Usuário #{usuarioId}</span>
               </h2>
             </div>
 
@@ -184,7 +194,7 @@ export default function EditarUsuario({ params }: { params: { id: string } }) {
 
                     <div className="space-y-2">
                       <Label htmlFor="cpf" className="text-gray-700">
-                        CPF <span className="text-red-500">*</span>
+                        CPF {cpfObrigatorio && <span className="text-red-500">*</span>}
                       </Label>
                       <Input
                         id="cpf"
@@ -192,7 +202,7 @@ export default function EditarUsuario({ params }: { params: { id: string } }) {
                         value={cpf}
                         onChange={handleCPFChange}
                         className="border-gray-200"
-                        required
+                        required={cpfObrigatorio}
                       />
                     </div>
 
@@ -211,6 +221,7 @@ export default function EditarUsuario({ params }: { params: { id: string } }) {
 
                     <div className="space-y-2">
                       <UnidadeSelect
+                        key={`${idUnidade}-${unidades.length}`}
                         unidades={unidades}
                         value={idUnidade}
                         onValueChange={setIdUnidade}

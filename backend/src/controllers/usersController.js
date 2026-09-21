@@ -47,21 +47,37 @@ exports.viewTermo = (req, res) => {
 const db = require("../config/db");
 const { registrarLog } = require("../utils/logger");
 const { mapDbError } = require("../utils/dbErrors");
+const { lerCpfObrigatorio } = require("./configuracoesController");
+
+async function validarDadosUsuario({ nomeUser, cpf, idUnidade }) {
+    if (!nomeUser || !idUnidade) {
+        return "Nome e Unidade do usuário são obrigatórios.";
+    }
+
+    const cpfNormalizado = typeof cpf === "string" ? cpf.trim() : cpf;
+    if (!cpfNormalizado && await lerCpfObrigatorio()) {
+        return "Nome, CPF e Unidade do usuário são obrigatórios.";
+    }
+
+    return null;
+}
 
 // Criar usuário
 exports.criarUsuario = async (req, res) => {
     const { nomeUser, cpf, telUser, idUnidade } = req.body;
-    if (!nomeUser || !cpf || !idUnidade) return res.status(400).json({ error: "Nome, CPF e Unidade do usuário são obrigatórios." });
+    const erroValidacao = await validarDadosUsuario({ nomeUser, cpf, idUnidade });
+    if (erroValidacao) return res.status(400).json({ error: erroValidacao });
+    const cpfNormalizado = typeof cpf === "string" && cpf.trim() ? cpf.trim() : null;
     const sql = "INSERT INTO usuarios (nomeUser, cpf, telUser, idUnidade) VALUES (?, ?, ?, ?)";
     try {
-        const [result] = await db.query(sql, [nomeUser, cpf, telUser, idUnidade]);
+        const [result] = await db.query(sql, [nomeUser, cpfNormalizado, telUser, idUnidade]);
 
         await registrarLog({
             acao: "CRIACAO",
             entidade: "usuario",
             entidadeId: result.insertId,
             req,
-            detalhes: { nomeUser, cpf, telUser, idUnidade },
+            detalhes: { nomeUser, cpf: cpfNormalizado, telUser, idUnidade },
         });
 
         res.status(201).json({ message: "Usuário criado com sucesso.", idUsuario: result.insertId });
@@ -116,22 +132,22 @@ exports.listarUsuarios = async (req, res) => {
 exports.editarUsuario = async (req, res) => {
     const { id } = req.params;
     const { nomeUser, cpf, telUser, idUnidade } = req.body;
-    if (!nomeUser || !cpf || !idUnidade) {
-        return res.status(400).json({ error: "Nome, CPF e Unidade são obrigatórios." });
-    }
+    const erroValidacao = await validarDadosUsuario({ nomeUser, cpf, idUnidade });
+    if (erroValidacao) return res.status(400).json({ error: erroValidacao });
+    const cpfNormalizado = typeof cpf === "string" && cpf.trim() ? cpf.trim() : null;
     try {
         const [beforeRows] = await db.query("SELECT * FROM usuarios WHERE idUser = ?", [id]);
         if (beforeRows.length === 0) return res.status(404).json({ error: "Usuário não encontrado." });
 
         const sql = "UPDATE usuarios SET nomeUser = ?, cpf = ?, telUser = ?, idUnidade = ? WHERE idUser = ?";
-        await db.query(sql, [nomeUser, cpf, telUser, idUnidade, id]);
+        await db.query(sql, [nomeUser, cpfNormalizado, telUser, idUnidade, id]);
 
         await registrarLog({
             acao: "EDICAO",
             entidade: "usuario",
             entidadeId: Number(id),
             req,
-            detalhes: { antes: beforeRows[0], depois: { nomeUser, cpf, telUser, idUnidade } },
+            detalhes: { antes: beforeRows[0], depois: { nomeUser, cpf: cpfNormalizado, telUser, idUnidade } },
         });
 
         res.json({ message: "Usuário atualizado com sucesso." });

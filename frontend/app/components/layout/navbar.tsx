@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Bell, Tablet, FileText, Building2, Users, ExternalLink, ScrollText, UserCog, Menu, X } from "lucide-react"
+import { Bell, Tablet, FileText, Building2, Users, ExternalLink, ScrollText, UserCog, Settings, Menu, X } from "lucide-react"
 import { useEffect, useState } from "react"
 import { ThemeToggle } from "../ThemeToggle"
 
@@ -31,6 +31,7 @@ export function Navbar({ currentPath }: NavbarProps) {
     { path: "/usuarios", icon: Users, label: "Usuários" },
     ...(user?.nivel === "admin" ? [{ path: "/admin/contas", icon: UserCog, label: "Acessos" }] : []),
     ...(user?.nivel === "admin" ? [{ path: "/admin/logs", icon: ScrollText, label: "Logs" }] : []),
+    ...(user?.nivel === "admin" ? [{ path: "/configuracoes", icon: Settings, label: "Configurações" }] : []),
     { path: "/outros-sistemas", icon: ExternalLink, label: "Outros Sistemas" },
   ]
 
